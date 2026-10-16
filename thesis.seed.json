@@ -1,0 +1,24 @@
+{
+  "app": "thesis",
+  "schemaVersion": 1,
+  "owner": "ace",
+  "updatedAt": null,
+  "settings": {
+    "title": "",
+    "programme": "",
+    "supervisor": "",
+    "targetSubmission": null,
+    "updatedAt": null
+  },
+  "reentry": {
+    "reference": "",
+    "status": "not_started",
+    "deadline": null,
+    "link": "",
+    "notes": "",
+    "updatedAt": null
+  },
+  "chapters": [],
+  "meetings": [],
+  "deadlines": []
+}
