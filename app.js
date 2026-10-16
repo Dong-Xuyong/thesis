@@ -688,6 +688,9 @@ function render() {
   else if (route.name === "settings") view = renderSettings();
   else view = renderOverview();
   main.appendChild(view);
+  if (window.ThesisNotion && typeof window.ThesisNotion.paint === "function") {
+    window.ThesisNotion.paint(main, doc);
+  }
   window.scrollTo(0, y);
 }
 
