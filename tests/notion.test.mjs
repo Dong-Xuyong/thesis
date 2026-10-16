@@ -60,6 +60,12 @@ assert.equal(full.sections[0].estimatedEffort, 2);
 assert.equal(parseChapterNotion({ title: "EXAMPLE" }), null);
 assert.equal(parseChapterNotion(null), null);
 assert.equal(parseChapterNotion({ notion: "nope" }), null);
+assert.equal(parseChapterNotion({
+  id: "ch_exaa03",
+  title: "EXAMPLE Method",
+  status: "not_started",
+  due: "2026-06-01",
+}), null);
 
 const sparse = parseChapterNotion({
   notion: { priority: "Low" },

@@ -23,20 +23,6 @@ import { safeHttpUrl } from "./core.js";
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const DATE_KEY = /^(\d{4})-(\d{2})-(\d{2})/;
 
-const NOTION_KEYS = [
-  "priority", "Priority",
-  "due", "dueDate", "Due date",
-  "estimateHours", "estimate", "Estimate time", "estimateTime",
-  "completionRate", "completion", "Completion rate",
-  "satisfaction", "satifaction", "Satifaction", "Satisfaction",
-  "reviewed", "Reviewed",
-  "improvements", "Improvements",
-  "comments", "Comments",
-  "sections", "checklist", "items",
-  "url", "notionUrl", "link",
-  "status", "Status",
-];
-
 function isObject(value) {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
@@ -114,13 +100,6 @@ export function completionPercent(value) {
   return Math.round(percent * 10) / 10;
 }
 
-function looksLikeNotion(value) {
-  if (!isObject(value)) return false;
-  return NOTION_KEYS.some(function (key) {
-    return Object.prototype.hasOwnProperty.call(value, key);
-  });
-}
-
 export function parseSection(raw) {
   if (!isObject(raw)) return null;
   const effort = pick(raw, ["estimatedEffort", "Estimated Effort", "Estimate Effort", "estimate", "estimateHours"]);
@@ -142,14 +121,15 @@ function parseSections(value) {
 }
 
 export function parseChapterNotion(input) {
-  const wrapped = isObject(input) && isObject(input.notion);
-  const source = wrapped ? input.notion : (looksLikeNotion(input) ? input : null);
-  if (!source) return null;
+  // A chapter always has status. Only an explicit notion object counts,
+  // otherwise every chapter would render an empty card.
+  if (!isObject(input) || !isObject(input.notion)) return null;
+  const source = input.notion;
   const completion = completionPercent(pick(source, ["completionRate", "completion", "Completion rate"]));
   const estimate = numberOrNull(pick(source, ["estimateHours", "estimate", "Estimate time", "estimateTime"]));
   const satisfaction = numberOrNull(pick(source, ["satisfaction", "satifaction", "Satifaction", "Satisfaction"]));
   const due = dateOrNull(pick(source, ["due", "dueDate", "Due date"]))
-    || (wrapped ? dateOrNull(input.due) : null);
+    || dateOrNull(input.due);
   return {
     priority: textOrNull(pick(source, ["priority", "Priority"])),
     due: due,
