@@ -453,7 +453,8 @@ function renderAttachments(items) {
 function paintUnsafe(root, doc) {
   root.querySelectorAll("[data-notion]").forEach(function (node) { node.remove(); });
   const route = readRoute();
-  // Chapter rows and the editor render notion. This paint keeps the overview table.
+  // Chapter rows and the editor render each chapter's notion card.
+  // The Thesis DB table and attachments stay on the overview and chapter list.
   if (route.name === "overview" || (route.name === "chapters" && !route.id)) {
     const rows = thesisTableRows(doc);
     const attachments = attachmentItems(doc);
