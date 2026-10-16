@@ -1,11 +1,14 @@
-/* Read-only Notion panel. Uses the shared theme tokens so a shell restyle still fits. */
+/* Thesis DB and Attachments. Colours follow the body.dx shell tokens. */
 
 .notion-card {
-  background: hsl(var(--card));
-  color: hsl(var(--card-foreground));
-  border: 1px solid hsl(var(--border));
-  border-radius: 18px;
-  padding: 12px 14px;
+  background: var(--dx-card);
+  color: var(--dx-text);
+  border: 1px solid var(--dx-border);
+  border-radius: var(--dx-radius);
+  box-shadow: var(--dx-shadow);
+  backdrop-filter: blur(var(--dx-blur));
+  -webkit-backdrop-filter: blur(var(--dx-blur));
+  padding: 14px;
   margin: 0 0 12px;
   min-width: 0;
   max-width: 100%;
@@ -31,7 +34,7 @@
 
 .notion-summary::before {
   content: "▸";
-  color: hsl(var(--muted-foreground));
+  color: var(--dx-muted);
   font-size: 0.85rem;
 }
 
@@ -63,8 +66,8 @@
   min-height: 24px;
   padding: 0 8px;
   border-radius: 999px;
-  background: hsl(var(--muted));
-  color: hsl(var(--foreground));
+  background: color-mix(in srgb, var(--dx-text) 8%, var(--dx-card-solid));
+  color: var(--dx-text);
   font-size: 0.75rem;
   font-weight: 700;
 }
@@ -105,7 +108,7 @@
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: hsl(var(--muted-foreground));
+  color: var(--dx-muted);
 }
 
 .notion-field dd {
@@ -125,12 +128,12 @@
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: hsl(var(--muted-foreground));
+  color: var(--dx-muted);
 }
 
 .notion-empty {
   margin: 0;
-  color: hsl(var(--muted-foreground));
+  color: var(--dx-muted);
   font-size: 0.9rem;
 }
 
@@ -142,7 +145,7 @@
 
 .notion-section {
   padding: 10px 0;
-  border-top: 1px solid hsl(var(--border));
+  border-top: 1px solid var(--dx-border);
 }
 
 .notion-section-head {
@@ -159,7 +162,7 @@
 
 .notion-section-effort {
   margin: 4px 0 0;
-  color: hsl(var(--muted-foreground));
+  color: var(--dx-muted);
   font-size: 0.85rem;
 }
 
@@ -180,16 +183,16 @@
   min-height: 28px;
   padding: 0 8px;
   border-radius: 999px;
-  border: 1px solid hsl(var(--border));
-  color: hsl(var(--muted-foreground));
+  border: 1px solid var(--dx-border);
+  color: var(--dx-muted);
   font-size: 0.78rem;
   font-weight: 700;
 }
 
 .notion-tick.is-on {
   border-color: transparent;
-  background: hsl(152 46% 26%);
-  color: #f4fff8;
+  background: var(--dx-accent-soft);
+  color: var(--dx-accent);
 }
 
 .notion-link {
@@ -197,7 +200,7 @@
   align-items: center;
   min-height: 44px;
   margin-top: 8px;
-  color: hsl(var(--primary));
+  color: var(--dx-accent);
   font-weight: 700;
   overflow-wrap: anywhere;
 }
@@ -213,7 +216,7 @@
   flex: 1;
   height: 8px;
   border-radius: 99px;
-  background: hsl(var(--muted));
+  background: color-mix(in srgb, var(--dx-muted) 28%, transparent);
   overflow: hidden;
   min-width: 72px;
 }
@@ -222,7 +225,7 @@
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: hsl(var(--primary));
+  background: var(--dx-accent);
 }
 
 .notion-bar-label {
@@ -249,7 +252,7 @@
   padding: 8px 8px 8px 0;
   text-align: left;
   vertical-align: middle;
-  border-bottom: 1px solid hsl(var(--border));
+  border-bottom: 1px solid var(--dx-border);
   white-space: nowrap;
 }
 
@@ -257,7 +260,7 @@
   font-size: 0.72rem;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: hsl(var(--muted-foreground));
+  color: var(--dx-muted);
 }
 
 .notion-table td:first-child,

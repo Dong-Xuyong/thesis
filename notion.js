@@ -1,9 +1,10 @@
 /**
- * Read-only Notion panel for thesis.json.
+ * Read-only Thesis DB table and Attachments list.
  *
- * GhSync already loads the private file and core.normalize keeps unknown keys,
- * including chapters[].notion. This module only parses and paints that object.
- * It never writes the document.
+ * Chapter notion is normalised in core.js. The chapter list chips and the one
+ * chapter card are rendered by app.js from that object. This module never
+ * writes the document. It still parses document-level Thesis DB rows and
+ * attachment lists, including the aliased property names Ace sometimes stores.
  *
  * Ace stores, per chapter:
  *   priority, estimateHours, satisfaction, reviewed, improvements, comments,
@@ -289,21 +290,6 @@ function chip(text, extra) {
   return el("span", { class: "notion-chip" + (extra || ""), text: text });
 }
 
-function field(label, content, wide) {
-  const row = el("div", { class: wide ? "notion-field notion-field-wide" : "notion-field" });
-  row.appendChild(el("dt", { text: label }));
-  const dd = el("dd");
-  if (typeof content === "string") dd.textContent = content;
-  else dd.appendChild(content);
-  row.appendChild(dd);
-  return row;
-}
-
-function prose(text) {
-  const node = el("p", { class: "notion-prose", text: dash(text) });
-  return node;
-}
-
 function completionBar(percent) {
   if (percent == null) return document.createTextNode("—");
   const shown = String(percent) + "%";
@@ -346,50 +332,6 @@ function sectionItem(section) {
   ticks.appendChild(tick("Cortez", section.cortez));
   li.appendChild(ticks);
   return li;
-}
-
-export function renderChapterCard(chapter, open) {
-  const notion = parseChapterNotion(chapter);
-  if (!notion || typeof document === "undefined") return null;
-  const details = el("details", { class: "notion-card", "data-notion": "chapter" });
-  if (open) details.open = true;
-  const summary = el("summary", { class: "notion-summary" });
-  summary.appendChild(el("span", { class: "notion-summary-title", text: "Notion" }));
-  if (notion.priority) summary.appendChild(chip(notion.priority, priorityClass(notion.priority)));
-  if (notion.completion != null) summary.appendChild(el("span", { class: "notion-summary-pct", text: notion.completion + "%" }));
-  if (notion.reviewed === true) summary.appendChild(chip("Reviewed", " notion-pri-low"));
-  details.appendChild(summary);
-
-  const fields = el("dl", { class: "notion-fields" });
-  fields.appendChild(field("Priority", notion.priority ? chip(notion.priority, priorityClass(notion.priority)) : "—"));
-  fields.appendChild(field("Due date", dash(formatDate(notion.due))));
-  fields.appendChild(field("Estimate", dash(formatHours(notion.estimateHours))));
-  fields.appendChild(field("Completion", completionBar(notion.completion), true));
-  fields.appendChild(field("Satisfaction", notion.satisfaction == null ? "—" : String(notion.satisfaction)));
-  fields.appendChild(field("Reviewed", yesNo(notion.reviewed)));
-  if (notion.status) fields.appendChild(field("Status", notion.status));
-  fields.appendChild(field("Improvements", prose(notion.improvements), true));
-  fields.appendChild(field("Comments", prose(notion.comments), true));
-  details.appendChild(fields);
-
-  details.appendChild(el("h3", { class: "notion-subhead", text: "Sections" }));
-  if (!notion.sections.length) {
-    details.appendChild(el("p", { class: "notion-empty", text: "No sections." }));
-  } else {
-    const list = el("ul", { class: "notion-sections" });
-    notion.sections.forEach(function (section) { list.appendChild(sectionItem(section)); });
-    details.appendChild(list);
-  }
-  if (notion.url) {
-    details.appendChild(el("a", {
-      class: "notion-link",
-      href: notion.url,
-      target: "_blank",
-      rel: "noopener noreferrer",
-      text: "Open in Notion",
-    }));
-  }
-  return details;
 }
 
 function tableHeader(label) {
@@ -453,8 +395,8 @@ function renderAttachments(items) {
 function paintUnsafe(root, doc) {
   root.querySelectorAll("[data-notion]").forEach(function (node) { node.remove(); });
   const route = readRoute();
-  // Chapter rows and the editor render each chapter's notion card.
-  // The Thesis DB table and attachments stay on the overview and chapter list.
+  // One chapter card is rendered by the editor from the normalized notion object.
+  // This module only adds the Thesis DB table and the Attachments list.
   if (route.name === "overview" || (route.name === "chapters" && !route.id)) {
     const rows = thesisTableRows(doc);
     const attachments = attachmentItems(doc);

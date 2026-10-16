@@ -28,6 +28,7 @@ import {
   toggleAction,
 } from "./core.js";
 import { demoDoc } from "./demo.js";
+import { completionPercent } from "./notion.js";
 
 var SAVE_DELAY = 2500;
 var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -466,6 +467,40 @@ function notionField(label, value, extraClass) {
   return wrap;
 }
 
+function notionNodeField(label, node) {
+  var wrap = el("div", { class: "field" });
+  wrap.appendChild(el("span", { class: "field-label", text: label }));
+  wrap.appendChild(node);
+  return wrap;
+}
+
+function notionDueText(chapter, notion) {
+  var fromNotion = formatDate(notion && notion.due);
+  if (fromNotion) return fromNotion;
+  var fromChapter = formatDate(chapter && chapter.due);
+  return fromChapter || "—";
+}
+
+function completionMeter(percent) {
+  if (percent == null) return el("p", { class: "readonly", text: "—" });
+  var shown = String(percent) + "%";
+  var row = el("div", { class: "notion-meter" });
+  var wrap = el("div", {
+    class: "bar",
+    role: "progressbar",
+    "aria-label": "Completion " + shown,
+  });
+  wrap.setAttribute("aria-valuemin", "0");
+  wrap.setAttribute("aria-valuemax", "100");
+  wrap.setAttribute("aria-valuenow", String(Math.round(percent)));
+  var fill = el("span", { class: "bar-fill" });
+  fill.style.width = percent + "%";
+  wrap.appendChild(fill);
+  row.appendChild(wrap);
+  row.appendChild(el("span", { class: "notion-meter-label", text: shown }));
+  return row;
+}
+
 function displayTick(label, on) {
   var row = el("label", { class: "check" });
   var box = document.createElement("input");
@@ -482,16 +517,22 @@ function displayTick(label, on) {
 function renderNotionCard(chapter) {
   var notion = notionRecord(chapter);
   if (!notion) return null;
-  var card = el("section", { class: "card notion-card" });
-  card.appendChild(el("h2", { class: "card-title", text: "From Notion" }));
+  var card = el("details", { class: "card notion-card" });
+  card.open = true;
+  var summary = el("summary", { class: "notion-summary" });
+  summary.appendChild(el("span", { class: "notion-summary-title", text: "From Notion" }));
+  card.appendChild(summary);
   var priorityWrap = el("div", { class: "field" });
   priorityWrap.appendChild(el("span", { class: "field-label", text: "Priority" }));
   priorityWrap.appendChild(priorityChip(notion.priority) || el("p", { class: "readonly", text: "—" }));
   card.appendChild(priorityWrap);
+  card.appendChild(notionField("Due", notionDueText(chapter, notion)));
   var hours = numberText(notion.estimateHours);
   card.appendChild(notionField("Estimate", hours === "—" ? "—" : hours + " h"));
+  card.appendChild(notionNodeField("Completion", completionMeter(completionPercent(notion.completionRate))));
   card.appendChild(notionField("Satisfaction", numberText(notion.satisfaction)));
   card.appendChild(notionField("Reviewed", notion.reviewed === true ? "Yes" : "No"));
+  if (notion.status) card.appendChild(notionField("Status", String(notion.status)));
   card.appendChild(notionField("Improvements", notion.improvements ? notion.improvements : "—", "notion-comments"));
   card.appendChild(notionField("Comments", notion.comments ? notion.comments : "—", "notion-comments"));
   var listWrap = el("div", { class: "field" });
@@ -828,7 +869,7 @@ function enterDemo() {
   readOnly = false;
   stopped = false;
   dirty = false;
-  doc = demoDoc(new Date());
+  doc = normalize(demoDoc(new Date()));
   render();
   if (sync) sync.textContent = "Demo";
 }
