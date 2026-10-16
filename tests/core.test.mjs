@@ -74,6 +74,104 @@ assert.equal(messy.chapters[0].source, "bot");
 assert.equal(messy.chapters[0].deleted, true);
 assert.equal(normalize({ owner: "other" }).owner, "ace");
 
+function notionSample(extra) {
+  return Object.assign({
+    priority: "High",
+    estimateHours: 8,
+    satisfaction: 40,
+    reviewed: true,
+    improvements: "EXAMPLE Tighten the opening",
+    comments: "EXAMPLE Line one\nEXAMPLE Line two",
+    sections: [
+      {
+        name: "EXAMPLE Claim",
+        status: "Done",
+        estimatedEffort: 2,
+        text: "EXAMPLE Drafted",
+        reviewedByEmanuel: true,
+        reviewedByCortez: false,
+      },
+    ],
+    url: "https://example.com/notion/opening",
+    status: "In progress",
+    completionRate: 0.5,
+  }, extra || {});
+}
+
+const rawNotion = notionSample();
+const rawDoc = { chapters: [{ id: "ch_raw001", notion: rawNotion }] };
+const loadedNotion = normalize(rawDoc);
+assert.deepEqual(loadedNotion.chapters[0].notion, rawNotion);
+assert.deepEqual(normalize(loadedNotion).chapters[0].notion, rawNotion);
+loadedNotion.chapters[0].notion.priority = "Low";
+loadedNotion.chapters[0].notion.sections[0].name = "changed";
+assert.equal(rawNotion.priority, "High");
+assert.equal(rawNotion.sections[0].name, "EXAMPLE Claim");
+assert.equal(JSON.parse(JSON.stringify(normalize(rawDoc))).chapters[0].notion.comments, "EXAMPLE Line one\nEXAMPLE Line two");
+
+const notionMessy = normalize({
+  chapters: [{
+    id: "ch_notion",
+    notion: {
+      priority: 4,
+      estimateHours: "8",
+      satisfaction: Number.NaN,
+      reviewed: "yes",
+      improvements: null,
+      comments: 12,
+      sections: [
+        null,
+        "nope",
+        {
+          name: 1,
+          status: false,
+          estimatedEffort: "3",
+          text: {},
+          reviewedByEmanuel: 1,
+          reviewedByCortez: "yes",
+          extra: "keep-section",
+        },
+      ],
+      url: { href: "https://example.com" },
+      status: true,
+      completionRate: Number.POSITIVE_INFINITY,
+      shelf: "keep-notion",
+    },
+  }],
+});
+const badNotion = notionMessy.chapters[0].notion;
+assert.equal(badNotion.priority, "");
+assert.equal(badNotion.estimateHours, null);
+assert.equal(badNotion.satisfaction, null);
+assert.equal(badNotion.reviewed, false);
+assert.equal(badNotion.improvements, "");
+assert.equal(badNotion.comments, "");
+assert.equal(badNotion.url, "");
+assert.equal(badNotion.status, "");
+assert.equal(badNotion.completionRate, null);
+assert.equal(badNotion.shelf, "keep-notion");
+assert.equal(badNotion.sections.length, 1);
+assert.equal(badNotion.sections[0].name, "");
+assert.equal(badNotion.sections[0].status, "");
+assert.equal(badNotion.sections[0].estimatedEffort, null);
+assert.equal(badNotion.sections[0].text, "");
+assert.equal(badNotion.sections[0].reviewedByEmanuel, false);
+assert.equal(badNotion.sections[0].reviewedByCortez, false);
+assert.equal(badNotion.sections[0].extra, "keep-section");
+assert.equal("notion" in normalize({ chapters: [{ id: "ch_none01" }] }).chapters[0], false);
+assert.deepEqual(normalize({ chapters: [{ id: "ch_empty1", notion: null }] }).chapters[0].notion, {
+  priority: "",
+  estimateHours: null,
+  satisfaction: null,
+  reviewed: false,
+  improvements: "",
+  comments: "",
+  sections: [],
+  url: "",
+  status: "",
+  completionRate: null,
+});
+
 const local = {
   app: "thesis",
   schemaVersion: 1,
@@ -201,6 +299,39 @@ assert.equal(merged.margin, "remote-note");
 assert.equal(merged.updatedAt, "2026-10-16T12:00:00.000Z");
 assert.equal(merged.schemaVersion, 1);
 
+const carried = merge(
+  { chapters: [chapter("ch_carry1", "2026-10-16T12:00:00.000Z", { title: "EXAMPLE Edited chapter" })] },
+  { chapters: [chapter("ch_carry1", "2026-10-16T08:00:00.000Z", {
+    notion: { priority: "Medium", comments: "EXAMPLE Keep me", estimateHours: 3, reviewed: true },
+  })] }
+);
+assert.equal(carried.chapters[0].title, "EXAMPLE Edited chapter");
+assert.equal(carried.chapters[0].notion.priority, "Medium");
+assert.equal(carried.chapters[0].notion.comments, "EXAMPLE Keep me");
+assert.equal(carried.chapters[0].notion.estimateHours, 3);
+assert.equal("improvements" in carried.chapters[0].notion, false);
+const carriedNorm = normalize(carried);
+assert.equal(carriedNorm.chapters[0].notion.priority, "Medium");
+assert.equal(carriedNorm.chapters[0].notion.comments, "EXAMPLE Keep me");
+assert.equal(carriedNorm.chapters[0].notion.estimateHours, 3);
+assert.equal(carriedNorm.chapters[0].notion.reviewed, true);
+assert.equal(carriedNorm.chapters[0].notion.improvements, "");
+assert.deepEqual(carriedNorm.chapters[0].notion.sections, []);
+
+const swapped = merge(
+  { chapters: [chapter("ch_swap01", "2026-10-16T08:00:00.000Z", {
+    notion: { priority: "Low", comments: "EXAMPLE Old", shelf: "local" },
+  })] },
+  { chapters: [chapter("ch_swap01", "2026-10-16T12:00:00.000Z", {
+    notion: { priority: "High", comments: "EXAMPLE New" },
+  })] }
+);
+assert.equal(swapped.chapters[0].notion.priority, "High");
+assert.equal(swapped.chapters[0].notion.comments, "EXAMPLE New");
+assert.equal("shelf" in swapped.chapters[0].notion, false);
+assert.deepEqual(normalize(swapped).chapters[0].notion.priority, "High");
+assert.equal(normalize(swapped).chapters[0].notion.comments, "EXAMPLE New");
+
 const offset = merge(
   { chapters: [chapter("ch_same01", "2026-10-16T12:00:00+01:00", { title: "EXAMPLE Earlier" })] },
   { chapters: [chapter("ch_same01", "2026-10-16T11:30:00Z", { title: "EXAMPLE Later instant" })] }
@@ -324,6 +455,15 @@ assert.equal(openActions(demo), 2);
 assert.equal(progressIsWeighted(demo), true);
 assert.equal(overallProgress(demo), 25);
 demo.chapters.forEach(function (item) { assert.ok(item.title.startsWith("EXAMPLE")); });
+demo.chapters.forEach(function (item) {
+  if (!item.notion) return;
+  const once = normalize({ chapters: [item] }).chapters[0].notion;
+  const twice = normalize({ chapters: [{ notion: once }] }).chapters[0].notion;
+  assert.deepEqual(twice, once);
+  assert.equal(once.priority, item.notion.priority);
+  assert.equal(once.comments, item.notion.comments);
+});
+assert.equal(demo.chapters[2].notion, undefined);
 demo.deadlines.forEach(function (item) { assert.ok(item.title.startsWith("EXAMPLE")); });
 demo.meetings.forEach(function (item) { assert.ok(item.summary.startsWith("EXAMPLE")); });
 assert.equal(JSON.stringify(demo).toLowerCase().includes("umin" + "ho"), false);
@@ -409,7 +549,11 @@ const remote1 = {
     updatedAt: "2026-10-16T09:00:00.000Z",
   },
   reentry: emptyDoc().reentry,
-  chapters: [chapter("ch_local1", "2026-10-16T08:00:00.000Z", { title: "EXAMPLE Old chapter", progress: 10 })],
+  chapters: [chapter("ch_local1", "2026-10-16T08:00:00.000Z", {
+    title: "EXAMPLE Old chapter",
+    progress: 10,
+    notion: { priority: "Low", comments: "EXAMPLE Remote only", shelf: "remote-shelf" },
+  })],
   meetings: [],
   deadlines: [{
     id: "dl_bot001",
@@ -471,6 +615,7 @@ let doc = {
   chapters: [chapter("ch_local1", "2026-10-16T12:00:00.000Z", {
     title: "EXAMPLE Edited chapter",
     progress: 40,
+    notion: notionSample(),
   })],
   meetings: [],
   deadlines: [],
@@ -488,6 +633,9 @@ assert.deepEqual(calls.map(function (call) { return call.method; }), ["GET", "PU
 assert.equal(saved.settings.title, "EXAMPLE From bot");
 assert.equal(saved.chapters[0].title, "EXAMPLE Edited chapter");
 assert.equal(saved.chapters[0].progress, 40);
+assert.deepEqual(saved.chapters[0].notion, notionSample());
+assert.equal("shelf" in saved.chapters[0].notion, false);
+assert.deepEqual(normalize({ chapters: [saved.chapters[0]] }).chapters[0].notion, notionSample());
 assert.ok(saved.deadlines.some(function (item) { return item.id === "dl_bot001"; }));
 assert.equal(saved.app, "thesis");
 assert.equal(APP_ID, "thesis");
@@ -531,5 +679,17 @@ assert.match(appSource, /saveWithRetry/);
 assert.match(appSource, /NOT_SAVED/);
 assert.match(appSource, /merge\(/);
 assert.doesNotMatch(appSource, /GhSync\.save\(\s*["']/);
+assert.match(appSource, /"est " \+ hoursText \+ " h · " \+ doneCount \+ "\/" \+ sections\.length \+ " sections"/);
+assert.match(appSource, /From Notion/);
+assert.match(appSource, /Open in Notion/);
+assert.match(appSource, /noopener/);
+assert.doesNotMatch(appSource, /innerHTML/);
+assert.doesNotMatch(appSource, /chapter\.notion\s*=/);
+assert.doesNotMatch(appSource, /\.notion\.[A-Za-z]+\s*=[^=]/);
+const cssSource = fs.readFileSync(new URL("../styles.css", import.meta.url), "utf8");
+assert.match(cssSource, /\.notion-comments\s*\{[^}]*white-space:\s*pre-wrap/);
+assert.match(cssSource, /\.chip-priority-high/);
+assert.match(cssSource, /\.chip-priority-medium/);
+assert.match(cssSource, /\.chip-priority-low/);
 
 console.log("core tests passed");
