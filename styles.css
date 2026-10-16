@@ -515,3 +515,48 @@ a,
 .check {
   touch-action: manipulation;
 }
+
+.notion-comments {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.notion-section {
+  min-width: 0;
+  margin-top: 10px;
+}
+
+.notion-ticks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+
+.notion-card input:disabled {
+  opacity: 1;
+}
+
+.notion-card .field > .chip {
+  align-self: flex-start;
+  max-width: 100%;
+}
+
+.chip-priority-high {
+  background: #9f1239;
+  color: #fff7f7;
+}
+
+.chip-priority-medium {
+  background: #92400e;
+  color: #fffbeb;
+}
+
+.chip-priority-low {
+  background: #166534;
+  color: #f0fdf4;
+}
+
+.badge-reviewed {
+  background: #166534;
+  color: #f0fdf4;
+}

@@ -108,6 +108,41 @@ function clampProgress(value) {
   return parsed;
 }
 
+function finiteNumberOrNull(value) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  return value;
+}
+
+function normalizeNotionSection(raw) {
+  const source = isPlainObject(raw) ? raw : {};
+  const out = Object.assign({}, clone(source));
+  out.name = stringOr(source.name, "");
+  out.status = stringOr(source.status, "");
+  out.estimatedEffort = finiteNumberOrNull(source.estimatedEffort);
+  out.text = stringOr(source.text, "");
+  out.reviewedByEmanuel = source.reviewedByEmanuel === true;
+  out.reviewedByCortez = source.reviewedByCortez === true;
+  return out;
+}
+
+function normalizeNotion(raw) {
+  const source = isPlainObject(raw) ? raw : {};
+  const out = Object.assign({}, clone(source));
+  out.priority = stringOr(source.priority, "");
+  out.estimateHours = finiteNumberOrNull(source.estimateHours);
+  out.satisfaction = finiteNumberOrNull(source.satisfaction);
+  out.reviewed = source.reviewed === true;
+  out.improvements = stringOr(source.improvements, "");
+  out.comments = stringOr(source.comments, "");
+  out.sections = Array.isArray(source.sections)
+    ? source.sections.filter(isPlainObject).map(normalizeNotionSection)
+    : [];
+  out.url = stringOr(source.url, "");
+  out.status = stringOr(source.status, "");
+  out.completionRate = finiteNumberOrNull(source.completionRate);
+  return out;
+}
+
 function pickNewer(local, remote) {
   const localAt = instant(local && local.updatedAt);
   const remoteAt = instant(remote && remote.updatedAt);
@@ -283,6 +318,7 @@ function normalizeChapter(raw) {
   if ("due" in raw) out.due = dateOrNull(raw.due);
   if ("notes" in raw) out.notes = stringOr(raw.notes, "");
   out.updatedAt = stringOr(raw.updatedAt, "");
+  if ("notion" in raw) out.notion = normalizeNotion(raw.notion);
   if (raw.deleted === true) out.deleted = true;
   else if ("deleted" in raw) delete out.deleted;
   return out;

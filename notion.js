@@ -453,30 +453,7 @@ function renderAttachments(items) {
 function paintUnsafe(root, doc) {
   root.querySelectorAll("[data-notion]").forEach(function (node) { node.remove(); });
   const route = readRoute();
-  if (route.name === "chapters" && route.id) {
-    const card = renderChapterCard(findChapter(doc, route.id), true);
-    if (card) {
-      const back = root.querySelector("a.back, a[href='#/chapters']");
-      if (back && back.parentNode === root) root.insertBefore(card, back.nextSibling);
-      else root.insertBefore(card, root.firstChild);
-    }
-  }
-  if (route.name === "chapters" && !route.id) {
-    root.querySelectorAll("a[href^='#/chapters/']").forEach(function (link) {
-      if (link.closest("[data-notion]")) return;
-      const href = link.getAttribute("href") || "";
-      const id = href.split("/")[2] || "";
-      const card = renderChapterCard(findChapter(doc, id), false);
-      if (!card) return;
-      const item = link.closest("li");
-      if (item) {
-        item.appendChild(card);
-        return;
-      }
-      const block = link.closest("article") || link;
-      if (block.parentNode) block.parentNode.insertBefore(card, block.nextSibling);
-    });
-  }
+  // Chapter rows and the editor render notion. This paint keeps the overview table.
   if (route.name === "overview" || (route.name === "chapters" && !route.id)) {
     const rows = thesisTableRows(doc);
     const attachments = attachmentItems(doc);

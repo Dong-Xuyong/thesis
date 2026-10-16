@@ -349,6 +349,34 @@ function renderChapters() {
   return frag;
 }
 
+function numberText(value) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "—";
+  return String(value);
+}
+
+function notionRecord(chapter) {
+  var notion = chapter && chapter.notion;
+  if (!notion || typeof notion !== "object" || Array.isArray(notion)) return null;
+  return notion;
+}
+
+function notionSections(notion) {
+  return notion && Array.isArray(notion.sections) ? notion.sections : [];
+}
+
+function sectionDone(section) {
+  return String(section && section.status || "").trim().toLowerCase() === "done";
+}
+
+function priorityChip(priority) {
+  var label = String(priority || "").trim();
+  if (!label) return null;
+  var kind = label.toLowerCase();
+  if (kind === "high" || kind === "medium" || kind === "low") kind = "priority-" + kind;
+  else kind = "";
+  return chip(label, kind);
+}
+
 function chapterRow(chapter, index, total) {
   var li = el("li");
   var card = el("article", { class: "card row" });
@@ -356,8 +384,23 @@ function chapterRow(chapter, index, total) {
   link.appendChild(el("h3", { text: chapter.title || "Untitled chapter" }));
   var meta = el("div", { class: "meta" });
   meta.appendChild(chip(STATUS_LABEL[chapter.status] || chapter.status, chapter.status));
+  var notion = notionRecord(chapter);
+  if (notion) {
+    var pChip = priorityChip(notion.priority);
+    if (pChip) meta.appendChild(pChip);
+    if (notion.reviewed === true) meta.appendChild(el("span", { class: "badge badge-reviewed", text: "Reviewed" }));
+  }
   if (chapter.due) meta.appendChild(el("span", { class: "muted", text: formatDate(chapter.due) }));
   link.appendChild(meta);
+  if (notion) {
+    var sections = notionSections(notion);
+    var hoursText = numberText(notion.estimateHours);
+    var doneCount = sections.filter(sectionDone).length;
+    link.appendChild(el("p", {
+      class: "muted",
+      text: "est " + hoursText + " h · " + doneCount + "/" + sections.length + " sections",
+    }));
+  }
   var words = chapter.words == null ? "" : String(chapter.words);
   var target = chapter.targetWords == null ? "" : String(chapter.targetWords);
   var caption = words || target ? (words || "0") + (target ? " / " + target : "") + " words" : "Progress";
@@ -406,10 +449,96 @@ function renderChapterEditor(id) {
     card.appendChild(field("Target words", textControl("chapter.targetWords", chapter.targetWords == null ? "" : chapter.targetWords, "number")));
     card.appendChild(field("Due", textControl("chapter.due", chapter.due || "", "date")));
     card.appendChild(field("Notes", areaControl("chapter.notes", chapter.notes || "")));
-    card.appendChild(el("button", { type: "button", class: "btn btn-danger", "data-act": "delete-chapter", "data-id": chapter.id, text: "Delete chapter" }));
   }
   frag.appendChild(card);
+  var fromNotion = renderNotionCard(chapter);
+  if (fromNotion) frag.appendChild(fromNotion);
+  if (!readOnly) {
+    frag.appendChild(el("button", { type: "button", class: "btn btn-danger", "data-act": "delete-chapter", "data-id": chapter.id, text: "Delete chapter" }));
+  }
   return frag;
+}
+
+function notionField(label, value, extraClass) {
+  var wrap = el("div", { class: "field" });
+  wrap.appendChild(el("span", { class: "field-label", text: label }));
+  wrap.appendChild(el("p", { class: extraClass ? "readonly " + extraClass : "readonly", text: value }));
+  return wrap;
+}
+
+function displayTick(label, on) {
+  var row = el("label", { class: "check" });
+  var box = document.createElement("input");
+  box.type = "checkbox";
+  box.checked = on === true;
+  box.disabled = true;
+  box.tabIndex = -1;
+  box.setAttribute("aria-label", label);
+  row.appendChild(box);
+  row.appendChild(el("span", { text: label }));
+  return row;
+}
+
+function renderNotionCard(chapter) {
+  var notion = notionRecord(chapter);
+  if (!notion) return null;
+  var card = el("section", { class: "card notion-card" });
+  card.appendChild(el("h2", { class: "card-title", text: "From Notion" }));
+  var priorityWrap = el("div", { class: "field" });
+  priorityWrap.appendChild(el("span", { class: "field-label", text: "Priority" }));
+  priorityWrap.appendChild(priorityChip(notion.priority) || el("p", { class: "readonly", text: "—" }));
+  card.appendChild(priorityWrap);
+  var hours = numberText(notion.estimateHours);
+  card.appendChild(notionField("Estimate", hours === "—" ? "—" : hours + " h"));
+  card.appendChild(notionField("Satisfaction", numberText(notion.satisfaction)));
+  card.appendChild(notionField("Reviewed", notion.reviewed === true ? "Yes" : "No"));
+  card.appendChild(notionField("Improvements", notion.improvements ? notion.improvements : "—", "notion-comments"));
+  card.appendChild(notionField("Comments", notion.comments ? notion.comments : "—", "notion-comments"));
+  var listWrap = el("div", { class: "field" });
+  listWrap.appendChild(el("span", { class: "field-label", text: "Sections" }));
+  var sections = notionSections(notion);
+  if (!sections.length) listWrap.appendChild(el("p", { class: "muted", text: "No sections." }));
+  else {
+    var ul = el("ul", { class: "stack" });
+    sections.forEach(function (section) {
+      var li = el("li", { class: "notion-section" });
+      var head = el("div", { class: "check" });
+      var done = document.createElement("input");
+      done.type = "checkbox";
+      done.checked = sectionDone(section);
+      done.disabled = true;
+      done.tabIndex = -1;
+      done.setAttribute("aria-label", "Section done");
+      head.appendChild(done);
+      head.appendChild(el("span", { text: section.name || "Untitled section" }));
+      li.appendChild(head);
+      var bits = [];
+      if (section.status) bits.push(String(section.status));
+      if (typeof section.estimatedEffort === "number" && Number.isFinite(section.estimatedEffort)) {
+        bits.push(String(section.estimatedEffort) + " h");
+      }
+      if (bits.length) li.appendChild(el("p", { class: "muted", text: bits.join(" · ") }));
+      var ticks = el("div", { class: "notion-ticks" });
+      ticks.appendChild(displayTick("Emanuel", section.reviewedByEmanuel === true));
+      ticks.appendChild(displayTick("Cortez", section.reviewedByCortez === true));
+      li.appendChild(ticks);
+      if (section.text) li.appendChild(el("p", { class: "readonly notion-comments", text: section.text }));
+      ul.appendChild(li);
+    });
+    listWrap.appendChild(ul);
+  }
+  card.appendChild(listWrap);
+  var href = safeHttpUrl(notion.url);
+  if (href) {
+    card.appendChild(el("a", {
+      class: "text-link",
+      href: href,
+      target: "_blank",
+      rel: "noopener noreferrer",
+      text: "Open in Notion",
+    }));
+  }
+  return card;
 }
 
 function renderMeetings() {

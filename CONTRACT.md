@@ -42,10 +42,39 @@ Each chapter object:
 - `words`, `targetWords`: integer or `null`.
 - `due`: `YYYY-MM-DD` or `null`.
 - `notes`: string.
+- `notion`: optional. Ace owns it. See Chapter notion. The site never edits it.
 - `updatedAt`: ISO-8601.
 - `deleted`: optional `true`.
 
 Never invent progress. Use Dong's number.
+
+## Chapter notion
+
+Ace owns each chapter's optional `notion` object. It is a read-only copy of that chapter's Notion page. The website may show it. The website must not create, edit, or delete it. Load normalises a present `notion`. Save and merge keep that object as it is and do not edit its fields.
+
+When `notion` is absent, leave it absent. When it is present but not an object, replace it with the defaults below. Otherwise keep unknown keys and normalise the known ones.
+
+- `priority`: string. `High`, `Medium`, `Low`, or `""`.
+- `estimateHours`: finite number, or `null`.
+- `satisfaction`: finite number, or `null`.
+- `reviewed`: boolean. Only boolean `true` stays `true`. Anything else is `false`.
+- `improvements`: string.
+- `comments`: string. The site renders this as text, never as HTML.
+- `sections`: array of section objects. A missing or non-array value is `[]`.
+- `url`: string. An http or https URL, or `""`.
+- `status`: string, or `""`.
+- `completionRate`: finite number, or `null`.
+
+Each section object:
+
+- `name`: string.
+- `status`: string. The site counts a section as done when this is `done`, ignoring case. The stored text is kept as written.
+- `estimatedEffort`: finite number, or `null`.
+- `text`: string.
+- `reviewedByEmanuel`: boolean. Only boolean `true` stays `true`.
+- `reviewedByCortez`: boolean. Only boolean `true` stays `true`.
+
+A value of the wrong type is replaced: strings become `""`, non-finite numbers become `null`, and booleans that are not `true` become `false`. On merge, `notion` stays one object on the chapter. It is not merged field by field. The newer chapter keeps its own `notion`. If only the older chapter has `notion`, that object is kept.
 
 ## Meetings
 
