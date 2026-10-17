@@ -552,16 +552,13 @@ export function safeHttpUrl(value) {
 }
 
 export async function saveWithRetry(attempt) {
+  // One retry path: gh-sync.js re-fetches, merges and retries a 409 once itself.
   try {
     return await attempt();
   } catch (err) {
-    if (!/another device/.test(String(err && err.message))) throw err;
-    try {
-      return await attempt();
-    } catch (err2) {
-      const wrapped = new Error(NOT_SAVED);
-      wrapped.cause = err2;
-      throw wrapped;
-    }
+    if (!(err && (err.status === 409 || /another device/.test(String(err.message))))) throw err;
+    const wrapped = new Error(NOT_SAVED);
+    wrapped.cause = err;
+    throw wrapped;
   }
 }
