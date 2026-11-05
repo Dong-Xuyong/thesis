@@ -1,5 +1,12 @@
+\noindent\fbox{%
+\begin{minipage}{\dimexpr\linewidth-2\fboxsep-2\fboxrule\relax}
+\textbf{TODO(Dong):} The cover and title-page PDFs were not edited.
+They still say ``Minho University'' and ``Engineering School''; Despacho RT-80/2026 requires ``University of Minho'' and ``School of Engineering''.
+They are dated October 2026; confirm that this is the month of submission (or of the corrected version) and replace the PDFs if it is not.
+Delete this note before submission.
+\end{minipage}}
 
-\cleardoublepage
+\vspace{1.5em}
 \phantomsection
 \section*{Copyright and terms of use of the work by third parties}
 
@@ -7,12 +14,14 @@ This is an academic work that can be used by third parties as long as internatio
 The work may be used under the terms of the licence below.
 If a use is not covered by that licence, the user should contact the author through the RepositóriUM of the University of Minho.
 
+\noindent\includegraphics[width=32mm]{assets/cc/CCBYNC.png}
+
 \noindent\textbf{Licence granted to users of this work}\\
 Attribution-NonCommercial\\
 CC BY-NC\\
 \url{https://creativecommons.org/licenses/by-nc/4.0/}
 
-\cleardoublepage
+\clearpage
 \phantomsection
 \section*{Acknowledgements}
 
@@ -28,18 +37,67 @@ I also thank the telecommunications operator that made the network data availabl
 
 Finally, I thank my family and friends for their unconditional love, patience and encouragement throughout this journey.
 
-\cleardoublepage
+\clearpage
 \phantomsection
 \section*{Statement of integrity}
 
 I hereby declare having conducted this academic work with integrity.
 I confirm that I have not used plagiarism or any form of undue use of information or falsification of results along the process leading to its elaboration.
-I further declare that I have fully acknowledged the Code of Ethical Conduct of the University of Minho.
+I further declare that I have fully acknowledged the Code of Ethics and Conduct of the University of Minho.
 
-\cleardoublepage
+\section*{Declaration on the use of artificial intelligence (AI) tools}
+
+I hereby declare having acted this academic work with integrity and confirm that I have not resorted to any form of undue use of AI tools, nor to the falsification or omission of information, sources, data, results or processes in any of the stages leading to its elaboration.
+
+I further declare that any use of AI tools was done in a transparent and responsible manner, being duly noted in the work, and that I critically verified the accuracy of the content produced with their support, assuming full responsibility for what I submit.
+
+I further declare that I have fully acknowledged the Code of Ethics and Conduct of the University of Minho, as well as the applicable standards of academic integrity and data protection.
+
+\noindent\textbf{TODO(Dong):} Annex 4 requires the AI tools, and how they were used, to be noted in the work. Fill in the items below and delete this note.
+\begin{itemize}
+  \item \textbf{TODO(Dong):} name every AI tool used.
+  \item \textbf{TODO(Dong):} state how each tool was used, and at which stage of the work.
+  \item \textbf{TODO(Dong):} state where in the dissertation that use is noted.
+  \item \textbf{TODO(Dong):} state how the output was critically checked.
+\end{itemize}
+
+\clearpage
+\phantomsection
+\section*{Resumo}
+\addcontentsline{toc}{section}{Resumo}
+
+\begin{center}
+\textbf{TODO(Dong): Portuguese title of the dissertation.}
+\end{center}
+
+\begin{otherlanguage}{portuguese}
+Esta dissertação foca-se na deteção de anomalias em dados de séries temporais agrupadas de telecomunicações provenientes de uma rede real.
+As redes de telecomunicações modernas geram grandes volumes de tráfego que devem ser monitorizados para detetar comportamento anómalo que pode afetar a fiabilidade do serviço, o aprovisionamento de capacidade e a tomada de decisão operacional.
+Estes conjuntos de dados estão estruturados ao longo de várias dimensões categóricas, o que cria muitos níveis de agregação possíveis e dificulta a decisão sobre quais séries temporais analisar.
+Este trabalho propõe um enquadramento baseado em estruturas de agregação hierárquica, mantendo o detetor fixo.
+Uma vista global única ou uma monitorização totalmente desagregada é frequentemente inadequada: uma vista global pode ocultar anomalias locais, enquanto a desagregação total é dispendiosa e pode deixar muitas séries demasiado esparsas para uma deteção fiável.
+Em vez disso, este trabalho explora estruturas hierárquicas parciais que podem revelar padrões anómalos de tráfego a um nível de detalhe relevante, com o objetivo de detetar anomalias em conjuntos de dados agrupados complexos sem sacrificar a interpretabilidade nem incorrer num custo analítico proibitivo.
+
+Uma gramática formal gera automaticamente estruturas hierárquicas.
+Cada candidata é pontuada com o Matrix Profile, e a área sob a curva ROC (AUC) dessas pontuações é a aptidão da procura.
+Para além de hierarquias predefinidas, o método pode descobrir automaticamente estruturas de agregação úteis.
+Para este efeito, recorre-se à Evolução Gramatical (\ac{GE}) \parencite{oneill2001grammatical,oneill2003}.
+A principal contribuição é um enquadramento reproduzível e interpretável para a procura de estruturas de agregação com um detetor fixo em séries temporais de telecomunicações.
+As hierarquias evoluídas atingiram uma AUC de teste de $0{,}678 \pm 0{,}066$, cerca de 0,10 a 0,14 acima da série totalmente agregada e das divisões por Call, Event e Service Type ($p = 0{,}002$).
+
+\noindent\textbf{Palavras-chave:} deteção de anomalias, telecomunicações, séries temporais hierárquicas, séries temporais agrupadas, Evolução Gramatical, Matrix Profile.
+\end{otherlanguage}
+
+\noindent\textbf{TODO(Dong):} Cut the keywords above to 3--5 and list them in alphabetical order (RT-80/2026, item 11). Do not choose the subset here. The resumo, title and keywords must fit on one page.
+
+\clearpage
 \phantomsection
 \section*{Abstract}
 \addcontentsline{toc}{section}{Abstract}
+
+\begin{center}
+\textbf{Hierarchical structure optimization for anomaly detection in grouped time series data}
+\end{center}
 
 This dissertation focuses on anomaly detection in grouped telecommunications time-series data from a real network.
 Modern telecommunications networks generate large volumes of traffic that must be monitored to detect anomalous behaviour that can affect service reliability, capacity provisioning, and operational decision-making.
@@ -57,31 +115,12 @@ The evolved hierarchies reached a test AUC of $0.678 \pm 0.066$, roughly 0.10 to
 
 \noindent\textbf{Keywords:} anomaly detection, telecommunications, hierarchical time series, grouped time series, Grammatical Evolution, Matrix Profile.
 
-\cleardoublepage
-\phantomsection
-\section*{Resumo}
-\addcontentsline{toc}{section}{Resumo}
-
-Esta dissertação foca-se na deteção de anomalias em dados de séries temporais agrupadas de telecomunicações provenientes de uma rede real.
-As redes de telecomunicações modernas geram grandes volumes de tráfego que devem ser monitorizados para detetar comportamento anómalo que pode afetar a fiabilidade do serviço, o aprovisionamento de capacidade e a tomada de decisão operacional.
-Estes conjuntos de dados estão estruturados ao longo de várias dimensões categóricas, o que cria muitos níveis de agregação possíveis e dificulta a decisão sobre quais séries temporais analisar.
-Este trabalho propõe um enquadramento baseado em estruturas de agregação hierárquica, mantendo o detetor fixo.
-Uma vista global única ou uma monitorização totalmente desagregada é frequentemente inadequada: uma vista global pode ocultar anomalias locais, enquanto a desagregação total é dispendiosa e pode deixar muitas séries demasiado esparsas para uma deteção fiável.
-Em vez disso, este trabalho explora estruturas hierárquicas parciais que podem revelar padrões anómalos de tráfego a um nível de detalhe relevante, com o objetivo de detetar anomalias em conjuntos de dados agrupados complexos sem sacrificar a interpretabilidade nem incorrer num custo analítico proibitivo.
-
-Uma gramática formal gera automaticamente estruturas hierárquicas.
-Cada candidata é pontuada com o Matrix Profile, e a área sob a curva ROC (AUC) dessas pontuações é a aptidão da procura.
-Para além de hierarquias predefinidas, o método pode descobrir automaticamente estruturas de agregação úteis.
-Para este efeito, recorre-se à Evolução Gramatical (\ac{GE}) \parencite{oneill2001grammatical,oneill2003}.
-A principal contribuição é um enquadramento reproduzível e interpretável para a procura de estruturas de agregação com um detetor fixo em séries temporais de telecomunicações.
-As hierarquias evoluídas atingiram uma AUC de teste de $0{,}678 \pm 0{,}066$, cerca de 0,10 a 0,14 acima da série totalmente agregada e das divisões por Call, Event e Service Type ($p = 0{,}002$).
-
-\noindent\textbf{Palavras-chave:} deteção de anomalias, telecomunicações, séries temporais hierárquicas, séries temporais agrupadas, Evolução Gramatical, Matrix Profile.
+\noindent\textbf{TODO(Dong):} Cut the keywords above to 3--5 and list them in alphabetical order (RT-80/2026, item 12). Do not choose the subset here. The abstract, title and keywords must fit on one page.
 
 \setcounter{tocdepth}{1}
 \tableofcontents
 
-\cleardoublepage
+\clearpage
 \phantomsection
 \section*{List of abbreviations and acronyms}
 \addcontentsline{toc}{section}{List of abbreviations and acronyms}
@@ -104,12 +143,5 @@ As hierarquias evoluídas atingiram uma AUC de teste de $0{,}678 \pm 0{,}066$, c
     \acro{VAE}{\textit{Variational Autoencoder}}
 \end{acronym}
 
-\cleardoublepage
-\phantomsection
-\addcontentsline{toc}{section}{\listfigurename}
-\listoffigures
-
-\cleardoublepage
-\phantomsection
-\addcontentsline{toc}{section}{\listtablename}
-\listoftables
+\uminholist{\listfigurename}{lof}
+\uminholist{\listtablename}{lot}

@@ -130,14 +130,14 @@ They are statistically indistinguishable from the Traffic Type split ($p = 0.92$
 
 \begin{figure}[htbp]
     \centering
-    \includegraphics[width=0.85\textwidth]{figures/results/auc_vs_baselines_train.png}
+    \includefig[width=0.85\textwidth]{figures/results/auc_vs_baselines_train.png}
     \caption[Training AUC of evolved hierarchies and fixed baselines]{Training \ac{AUC} (18 July--14 September 2022) of the fixed baselines (grey circles) and distribution of the training \ac{AUC} of the best evolved hierarchy over 10 runs (box plot and red points).}
     \label{fig:auc-baselines-train}
 \end{figure}
 
 \begin{figure}[htbp]
     \centering
-    \includegraphics[width=0.85\textwidth]{figures/results/auc_vs_baselines_test.png}
+    \includefig[width=0.85\textwidth]{figures/results/auc_vs_baselines_test.png}
     \caption[Test AUC of evolved hierarchies and fixed baselines]{Test \ac{AUC} (14 September--13 October 2022) of the fixed baselines (blue diamonds) and distribution of the test \ac{AUC} of the best evolved hierarchy over 10 runs (box plot and red points). Rows and horizontal axis are the same as in Figure~\ref{fig:auc-baselines-train}.}
     \label{fig:auc-baselines-test}
 \end{figure}
@@ -174,7 +174,7 @@ The Subscriber Type split drops from 0.734 to 0.581, while the Event Type and Se
 
 \begin{figure}[htbp]
     \centering
-    \includegraphics[width=\textwidth]{figures/results/pooled_vs_original.png}
+    \includefig[width=\textwidth]{figures/results/pooled_vs_original.png}
     \caption[Original vs pooled test AUC]{Test \ac{AUC} under the original metric (leaves with anomalies only) and the pooled metric (all leaves). Error bars show the standard deviation over the 10 evolved hierarchies.}
     \label{fig:pooled-original}
 \end{figure}
@@ -195,7 +195,7 @@ Under pooled scoring, however, two single-feature splits with two to four leaves
 
 \begin{figure}[htbp]
     \centering
-    \includegraphics[width=0.75\textwidth]{figures/results/leaves_vs_auc.png}
+    \includefig[width=0.75\textwidth]{figures/results/leaves_vs_auc.png}
     \caption[Test AUC against number of leaf series]{Test \ac{AUC} (original metric) against the number of leaf series to monitor, on a logarithmic scale.}
     \label{fig:leaves-auc}
 \end{figure}
@@ -208,7 +208,7 @@ Training fitness is a weak guide to test performance: across runs, the Spearman 
 
 \begin{figure}[htbp]
     \centering
-    \includegraphics[width=0.6\textwidth]{figures/results/train_vs_test.png}
+    \includefig[width=0.6\textwidth]{figures/results/train_vs_test.png}
     \caption[Train vs test AUC]{Training against test \ac{AUC} (original metric) for each evolved hierarchy and baseline. Points below the diagonal lose \ac{AUC} on the test period.}
     \label{fig:train-test}
 \end{figure}
@@ -221,7 +221,7 @@ The three leaves were selected by rank, as the leaves with the best, median and 
 
 \begin{figure}[htbp]
     \centering
-    \includegraphics[width=\textwidth]{figures/results/ts_leaf_examples.png}
+    \includefig[width=\textwidth]{figures/results/ts_leaf_examples.png}
     \caption[Leaf series, labelled anomalies and Matrix Profile scores]{Test period for the best, median and worst leaf of the best evolved hierarchy (seed 7) and for the fully aggregated series. Blue: hourly \#Events; orange: labelled anomalous hours; red: normalised \ac{MP} score ($m = 168$).}
     \label{fig:ts-examples}
 \end{figure}
@@ -250,7 +250,7 @@ More generations would likely increase training fitness, but, given the generali
 
 \begin{figure}[htbp]
     \centering
-    \includegraphics[width=0.75\textwidth]{figures/results/fitness_evolution.png}
+    \includefig[width=0.75\textwidth]{figures/results/fitness_evolution.png}
     \caption[Fitness evolution]{Best training fitness per generation for each of the 10 runs (faint lines), their mean (solid) and the mean population average (dashed).}
     \label{fig:fitness}
 \end{figure}
@@ -262,7 +262,7 @@ It contains 34 leaves, splits first on Event Type, and uses up to five condition
 
 \begin{figure}[htbp]
     \centering
-    \includegraphics[width=0.88\textwidth]{figures/results/phenotype_tree.png}
+    \includefig[width=0.88\textwidth]{figures/results/phenotype_tree.png}
     \caption[Best evolved hierarchy (seed 7)]{Hierarchy evolved by seed 7. Each path from the root to a leaf is a conjunction of filters, with boxes coloured by feature. Leaves are coloured by test \ac{AUC} and sized by their weight $w_\ell$ in Equation~\ref{eq:weighted-auc}; leaves without both classes in the test period are not scored.}
     \label{fig:phenotype-tree}
 \end{figure}
