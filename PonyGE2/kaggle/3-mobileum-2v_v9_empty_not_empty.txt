@@ -1,0 +1,173 @@
+cells 11
+--- [0] markdown
+<a class="anchor" id="0"></a>
+# **Mubileum Duration Generation with VAE**
+--- [1] markdown
+<a class="anchor" id="0.1"></a>
+# **Table of Contents**
+
+- 1. [Setup](#1)
+- 2. [Data Preparation](#2)
+<!--     - 2.1 [Data Preparation for LSTM](#2.1) -->
+- 3. [EDA](#3)
+- 4. [Anomaly Detection](#4)
+- 5. [Anomaly Creation](#5)
+- 6. [Genetic Algoritm Otimization](#6)
+
+--- [2] markdown
+# **1. SetUp** <a class="anchor" id="1"></a>
+
+[Table of Contents](#0.1)
+--- [3] code
+# Data Manipulation and Analysis
+import numpy as np
+import pandas as pd
+
+#Visualization
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# Scikit-Learn for Machine Learning
+from sklearn.model_selection import train_test_split, StratifiedKFold
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.impute import SimpleImputer
+from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import OrdinalEncoder
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import roc_auc_score, confusion_matrix, ConfusionMatrixDisplay
+
+
+# TensorFlow and Keras for Deep Learning
+# import tensorflow as tf
+# from tensorflow.keras.models import Model
+# from tensorflow.keras.layers import Input, LSTM, Dense, Lambda, RepeatVector
+# from tensorflow.keras import backend as K
+
+
+from sklearn.metrics import precision_recall_curve
+
+
+# Read a CSV file into a Pandas DataFrame
+df = pd.read_csv("/kaggle/input/mobileum/jul_aug_sep_oct_2022_msc_1.csv", sep=";")
+
+# Convert Start Date and Start Hour into a datetime object and set as index
+df['TIMESTAMP'] = pd.to_datetime(df['Start Date'] + ' ' + df['Start Hour'].astype(str), format='%d/%m/%Y %H')
+# df.set_index("TIMESTAMP", inplace=True)
+
+# Clean the #Events column, remove any non-numeric characters, fill NaNs with 0, and convert to integer
+df['#Events'] = df['#Events'].str.replace(r'[^\d.-]', '', regex=True)
+df['#Events'] = df['#Events'].fillna(0)
+df['#Events'] = pd.to_numeric(df['#Events']).astype(int)
+
+# Drop unnecessary columns
+# df.drop(columns=['Datasource', 'Start Date', 'Start Hour'], inplace=True) 
+df.drop(columns=['Datasource', 'Start Date', 'Start Hour', 'Event Duration'], inplace=True)
+
+# Drop duplicates
+df.drop_duplicates(inplace=True)
+# df=df.reset_index()
+--- [4] code
+df
+>>>        Call Type    Event Type Subscriber Type Traffic Type Service Type  \
+>>> 0            SMS    ORIGINATED        Postpaid      OFF-NET  NOT-ROAMING   
+>>> 1          VOICE  CALL FORWARD     Application          INT  NOT-ROAMING   
+>>> 2          VOICE    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> 3          VOICE    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> 4          VOICE    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> ...          ...           ...             ...          ...          ...   
+>>> 958783       SMS    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> 958784       SMS    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> 958785       SMS    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> 958786       SMS    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> 958787       SMS    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> 
+>>>        Partner Description  #Events           TIMESTAMP  
+>>> 0                   P_0001      105 2022-07-18 00:00:00  
+>>> 1                   P_0001       16 2022-07-18 00:00:00  
+>>> 2                   P_0002        7 2022-07-18 00:00:00  
+>>> 3                   P_0003       15 2022-07-18 00:00:00  
+>>> 4                   P_0004        1 2022-07-18 00:00:00  
+>>> ...                    ...      ...                 ...  
+>>> 958783              P_0280       30 2022-10-13 21:00:00  
+>>> 958784              P_0079      265 2022-10-13 21:00:00  
+>>> 958785              P_0102        6 2022-10-13 21:00:00  
+>>> 958786 
+--- [5] markdown
+# Get all combinations of aggregation
+--- [6] markdown
+# **4. Anomaly Creation** <a class="anchor" id="4"></a>
+
+[Table of Contents](#0.1)
+--- [7] code
+def filter_and_aggregate(df, filter_conditions, hierarchy=False):
+    """
+    Filters the DataFrame based on given conditions and aggregates by summing up a specified column.
+    
+    Args:
+    - df: The original DataFrame.
+    - filter_conditions: A dictionary where keys are column names and values are the values to filter on.
+    
+    Returns:
+    - A new DataFrame with the filtered and aggregated data.
+    """
+    # Apply the filter conditions
+    df_fil = df.copy()
+    
+    for col, val in filter_conditions.items():
+        df_fil = df_fil[df_fil[col] == val]
+    
+    # Drop the columns used for filtering
+    df_fil.drop(columns=list(filter_conditions.keys()), inplace=True)
+    
+    # Group by 'TIMESTAMP' and sum up the '#Events' column
+    if hierarchy:
+        df_agg = df_fil.groupby('TIMESTAMP')[['#Events','Anomaly']].sum().reset_index()
+    else:
+        df_agg = df_fil.groupby('TIMESTAMP')['#Events'].sum().reset_index()
+    
+    return df_agg
+--- [8] code
+from itertools import product
+import pandas as pd
+
+# Assume df is your original DataFrame with columns and a '#Events' column
+columns = ['Call Type', 'Event Type', 'Subscriber Type', 'Traffic Type', 'Service Type', 'Partner Description']
+
+# Function to create all combinations of unique values for each column
+def create_combinations(df, columns):
+    unique_values_dict = {col: df[col].unique() for col in columns}
+    return list(product(*unique_values_dict.values()))
+
+# Create a DataFrame for storing non-empty and empty combinations
+df_nonempty_combinations = pd.DataFrame(columns=columns + ["Number of examples (rows)"])
+df_empty_combinations = pd.DataFrame(columns=columns)
+
+# Get all combinations
+combinations = create_combinations(df, columns)
+
+# Check each combination using the filter_and_aggregate function
+for combo in combinations:
+    filter_conditions = dict(zip(columns, combo))
+    aggregated_df = filter_and_aggregate(df, filter_conditions)
+    
+    if not aggregated_df.empty:
+        # If the result is non-empty, store the combination and the row count
+        row_count = len(aggregated_df)
+        # Create a new DataFrame for the row to be appended
+        new_row = pd.DataFrame([{**filter_conditions, "Number of examples (rows)": row_count}])
+        # Use concat to append the new row
+        df_nonempty_combinations = pd.concat([df_nonempty_combinations, new_row], ignore_index=True)
+    else:
+        # If the result is empty, store the combination
+        new_row = pd.DataFrame([filter_conditions])
+        df_empty_combinations = pd.concat([df_empty_combinations, new_row], ignore_index=True)
+
+# Now you have two DataFrames: one for non-empty combinations and one for empty combinations
+len(combinations)
+>>> 94080
+--- [9] code
+df_nonempty_combinations.to_csv("not_empty_combinations.csv", index=False)
+df_empty_combinations.to_csv("empty_combinations.csv", index=False)
+--- [10] code
+

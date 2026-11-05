@@ -1,0 +1,319 @@
+cells 23
+--- [0] code
+import numpy as np 
+import pandas as pd 
+
+from sklearn.model_selection import train_test_split,StratifiedKFold
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import OneHotEncoder
+from sklearn.impute import SimpleImputer
+from sklearn.compose import ColumnTransformer
+--- [1] code
+df = pd.read_csv("/kaggle/input/mobileum/jul_aug_sep_oct_2022_msc_1.csv", sep=";")
+--- [2] code
+columns_cat = [ 'Call Type', 'Event Type', 'Subscriber Type', 'Traffic Type', 'Service Type', 'Partner Description']
+columns_num =  [ 'Start Hour', 'Event Duration']
+--- [3] code
+df_fil = df[(df['Call Type'] == 'VOICE') & (df['Event Type'] == 'ORIGINATED') & (df['Subscriber Type'] == 'Postpaid')].copy()
+--- [4] code
+# Convert 'Start Date' to datetime if it's not already
+df_fil['Start Date'] = pd.to_datetime(df_fil['Start Date'], format='%d/%m/%Y')
+
+# Combine 'Start Date' and 'Start Hour' into a new datetime column
+# df_fil.index = df_fil['Start Date'] + pd.to_timedelta(df_fil['Start Hour'], unit='h')
+df_fil["TIMESTAMP"] = df_fil['Start Date'] + pd.to_timedelta(df_fil['Start Hour'], unit='h')
+--- [5] code
+df_fil.drop(["Datasource", "Call Type", "Event Type", "Subscriber Type", "#Events", "Partner Description", "Start Date", "Start Hour"], inplace=True, axis=1)
+--- [6] code
+df_fil.info()
+>>> <class 'pandas.core.frame.DataFrame'>
+>>> Index: 6330 entries, 200 to 958514
+>>> Data columns (total 4 columns):
+>>>  #   Column          Non-Null Count  Dtype         
+>>> ---  ------          --------------  -----         
+>>>  0   Traffic Type    6330 non-null   object        
+>>>  1   Service Type    6330 non-null   object        
+>>>  2   Event Duration  6330 non-null   int64         
+>>>  3   TIMESTAMP       6330 non-null   datetime64[ns]
+>>> dtypes: datetime64[ns](1), int64(1), object(2)
+>>> memory usage: 247.3+ KB
+>>> 
+--- [7] code
+df_fil = df_fil.groupby(["TIMESTAMP"], as_index=False)['Event Duration'].sum()
+--- [8] code
+df_fil
+>>>                TIMESTAMP  Event Duration
+>>> 0    2022-07-18 00:00:00         2107841
+>>> 1    2022-07-18 01:00:00         1421139
+>>> 2    2022-07-18 02:00:00         1033723
+>>> 3    2022-07-18 03:00:00          856652
+>>> 4    2022-07-18 04:00:00         1177790
+>>> ...                  ...             ...
+>>> 2105 2022-10-13 17:00:00        10694734
+>>> 2106 2022-10-13 18:00:00        11846961
+>>> 2107 2022-10-13 19:00:00        10780043
+>>> 2108 2022-10-13 20:00:00         9133906
+>>> 2109 2022-10-13 21:00:00         3836670
+>>> 
+>>> [2110 rows x 2 columns]
+--- [9] code
+df_fil.index =df_fil["TIMESTAMP"]
+df_fil.drop(["TIMESTAMP"], inplace=True, axis=1)
+--- [10] code
+df_fil.to_csv("example.csv")
+--- [11] code
+event_duration_array = df_fil['Event Duration'].values
+
+# Define a function to create a sliding window
+def sliding_window(arr, window_size, step_size):
+    num_windows = ((arr.size - window_size) // step_size) + 1
+    return np.array([arr[i:i+window_size] for i in range(0, num_windows * step_size, step_size)])
+
+# Apply the sliding window function to the 'Event Duration' numpy array
+window_size = 24
+step_size = 1
+event_duration_sliding_window = sliding_window(event_duration_array, window_size, step_size)
+
+event_duration_sliding_window.shape, event_duration_sliding_window.dtype
+>>> ((2087, 24), dtype('int64'))
+--- [12] code
+# Assuming the 'Event Duration' column contains the time series data
+time_series = df_fil['Event Duration'].values
+
+# Step 0: Create a sliding window
+def create_sliding_window(data, window_size, step_size):
+    X = []
+    for start in range(0, len(data) - window_size, step_size):
+        end = start + window_size
+        X.append(data[start:end])
+    return np.array(X)
+
+window_size = 24
+step_size = 1
+X = create_sliding_window(time_series, window_size, step_size)
+
+# Step 1: Split into train and test sets
+train_size = int(len(X) * 0.8)
+X_train, X_test = X[:train_size], X[train_size:]
+
+# Reshape for LSTM input
+X_train = X_train.reshape((X_train.shape[0], window_size, 1))
+X_test = X_test.reshape((X_test.shape[0], window_size, 1))
+
+X_train.shape, X_test.shape
+>>> ((1668, 24, 1), (418, 24, 1))
+--- [13] code
+import numpy as np
+import pandas as pd
+from tensorflow.keras.layers import Input, LSTM, Dense, Lambda, RepeatVector
+from tensorflow.keras.models import Model
+from tensorflow.keras import backend as K
+
+# Assuming 'X_train' and 'X_test' are your preprocessed data ready for training
+
+# Define the VAE model architecture parameters
+lstm_units = 12
+latent_dim = 2
+input_shape = (24, 1)  # window_size = 24 from the sliding window step
+
+# Encoder
+encoder_inputs = Input(shape=input_shape)
+encoder_lstm, state_h, state_c = LSTM(lstm_units, return_state=True)(encoder_inputs)
+z_mean = Dense(latent_dim)(state_h)
+z_log_var = Dense(latent_dim)(state_h)
+
+# Reparameterization trick
+def sampling(args):
+    z_mean, z_log_var = args
+    batch = K.shape(z_mean)[0]
+    dim = K.int_shape(z_mean)[1]
+    epsilon = K.random_normal(shape=(batch, dim))
+    return z_mean + K.exp(0.5 * z_log_var) * epsilon
+
+# Apply the sampling function
+z = Lambda(sampling, output_shape=(latent_dim,))([z_mean, z_log_var])
+
+# Decoder
+decoder_lstm = LSTM(lstm_units, return_sequences=True)
+decoder_outputs = decoder_lstm(RepeatVector(input_shape[0])(z))
+
+# VAE model
+vae = Model(encoder_inputs, decoder_outputs)
+
+# VAE Loss Function
+def vae_loss(encoder_inputs, decoder_outputs, z_mean, z_log_var):
+    reconstruction_loss = K.mean(K.square(encoder_inputs - decoder_outputs), axis=[1, 2])
+    kl_loss = -0.5 * K.sum(1 + z_log_var - K.square(z_mean) - K.exp(z_log_var), axis=-1)
+    return reconstruction_loss + &#8203;``【oaicite:0】``&#8203;
+
+--- [14] code
+# train_set_reshaped = train_set.reshape((train_set.shape[0], train_set.shape[1], 1))
+# test_set_reshaped = test_set.reshape((test_set.shape[0], test_set.shape[1], 1))
+
+# (train_set_reshaped.shape, test_set_reshaped.shape)
+--- [15] code
+import pandas as pd
+from sklearn.model_selection import train_test_split
+
+
+
+# Assuming the 'Event Duration' is the column of interest for the sliding window
+data = df_fil['Event Duration'].values
+
+# Create sliding windows
+window_size = 24
+step_size = 1
+
+X = []
+y = []
+
+for i in range(0, len(data) - window_size, step_size):
+    X.append(data[i:i+window_size])
+    y.append(data[i+window_size])
+
+# Convert to numpy arrays
+X = np.array(X)
+y = np.array(y)
+
+# Reshape X to fit the LSTM input requirement [samples, time steps, features]
+X = X.reshape((X.shape[0], window_size, 1))
+
+# Split into training and testing sets
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+(X_train.shape, X_test.shape), (y_train.shape, y_test.shape)
+
+--- [16] code
+import tensorflow as tf
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import Input, LSTM, Dense, Lambda, RepeatVector
+from tensorflow.keras import backend as K
+
+# Define the VAE model architecture
+lstm_units = 12
+input_size = 24  # As defined by your sliding window size
+latent_dim = 2   # Dimensionality of the latent space
+
+# Encoder
+encoder_inputs = Input(shape=(input_size, 1))
+encoder_lstm, state_h, state_c = LSTM(lstm_units, return_state=True)(encoder_inputs)
+z_mean = Dense(latent_dim)(state_h)
+z_log_var = Dense(latent_dim)(state_h)
+
+# Sampling function
+def sampling(args):
+    z_mean, z_log_var = args
+    batch = K.shape(z_mean)[0]
+    epsilon = K.random_normal(shape=(batch, latent_dim))
+    return z_mean + K.exp(0.5 * z_log_var) * epsilon
+
+# Use the Lambda layer to wrap the sampling function
+z = Lambda(sampling, output_shape=(latent_dim,))([z_mean, z_log_var])
+
+# Decoder
+decoder_lstm = LSTM(lstm_units, return_sequences=True)
+decoder_outputs = decoder_lstm(RepeatVector(input_size)(z))
+
+# VAE Model
+vae = Model(encoder_inputs, decoder_outputs)
+
+# VAE Loss Function
+def vae_loss(encoder_inputs, decoder_outputs):
+    reconstruction_loss = K.mean(K.square(encoder_inputs - decoder_outputs))
+    kl_loss = -0.5 * K.mean(1 + z_log_var - K.square(z_mean) - K.exp(z_log_var), axis=-1)
+    return reconstruction_loss + kl_loss
+
+# Add the loss function to the VAE model
+vae.add_loss(vae_loss(encoder_inputs, decoder_outputs))
+vae.compile(optimizer='adam')
+
+# Training the model
+batch_size = 32
+epochs = 50  # You can set this to the number of epochs you want to train for
+
+history = vae.fit(
+    X_train, 
+    shuffle=True,
+    epochs=epochs,
+    batch_size=batch_size,
+    validation_data=(X_test, None)
+)
+
+--- [17] code
+# model.summary()
+--- [18] code
+# vae.summary()
+--- [19] code
+# def generate_samples(vae_model, num_samples):
+#     # Generate random samples from a standard normal distribution
+#     latent_samples = np.random.randn(num_samples, 2)
+    
+#     # Decode the latent samples to generate synthetic time series data
+#     generated_data = vae_model.decoder.predict(latent_samples)
+    
+#     return generated_data
+
+
+# # Generate 5 new examples of time series data using the VAE
+# num_generated_examples = 5
+# generated_examples = generate_samples(vae, num_generated_examples)
+
+# # Print or use the generated examples as needed
+# print(generated_examples)
+--- [20] code
+# # Assume that 'latent_dim' and 'lstm_units' are defined as before
+# latent_dim = 2
+# lstm_units = 12
+
+# # This input layer accepts the sampled latent vectors
+# decoder_input = Input(shape=(latent_dim,))
+
+# # The RepeatVector layer repeats the input to match the sequence length
+# # The input to RepeatVector is the latent_dim, and the output is (None, input_size, latent_dim)
+# decoder_repeated = RepeatVector(input_size)(decoder_input)
+
+# # Decoder LSTM layer
+# # The output shape of LSTM layer in the decoder would be (None, input_size, lstm_units)
+# decoder_lstm_layer = LSTM(lstm_units, return_sequences=True)
+
+# # Apply the LSTM layer to the repeated vector
+# decoder_lstm_output = decoder_lstm_layer(decoder_repeated)
+
+# # If there are additional layers in the decoder, they would be applied here
+
+# # The final output layer would create the reconstructed sequence
+# # It needs to match the original sequence shape, which is (input_size, 1)
+# decoder_dense = Dense(1, activation='linear')  # or another activation function as required
+
+# # Apply the dense layer to the LSTM output to get the final decoder model output
+# decoder_output = decoder_dense(decoder_lstm_output)
+
+# # Define the decoder model
+# decoder_model = Model(decoder_input, decoder_output)
+
+# # Set weights in the decoder model
+# # This assumes you have a trained 'vae' model from which to extract the weights
+# # Weights for LSTM and Dense layers would need to be set separately, extracted from the VAE model
+# decoder_lstm_layer.set_weights(vae.get_layer('lstm_13').get_weights())
+# decoder_dense.set_weights(vae.get_layer('dense_end').get_weights())  # Replace 'dense_end' with the name of your last dense layer
+
+# # Now you can use this decoder model to generate new data from latent space samples
+
+--- [21] code
+# # Assuming:
+# # - 'decoder_model' is the decoder part of your VAE
+# # - 'latent_dim' is the size of the latent space
+# # - 'n_samples' is the number of new data points you want to generate
+
+# # Step 1: Sample from the latent space
+# n_samples = 10  # Example number of samples
+# z_sample = np.random.normal(size=(n_samples, latent_dim))
+
+# # Step 2: Decode the sampled latent variables to generate new data
+# generated_data = decoder_model.predict(z_sample)
+
+# # Now 'generated_data' contains new data points generated by the VAE
+
+--- [22] code
+

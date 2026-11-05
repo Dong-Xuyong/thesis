@@ -1,0 +1,255 @@
+# Mindmap for Thesis
+- Introduction ^0d379cc9-a0d3-5cb8
+	- [[001 Acknowledgements]] ^7e1c8118-a7de-f7e0
+		- Prof. Paulo Cortez: Motivation, Guidance
+		- Prof. Emanuel Gouveia: Feedback, Insights
+		- Family: Love, Patience
+		- Friends: Encouragement
+		- Research Growth
+		- Academic Development
+	- [[002 Summary]] ^6676ee11-68d9-4b6e
+		- Master's Thesis (DTx Cooperation)
+		- Telecommunication Industry Challenges
+		- Agnostic Framework for Complex Datasets
+		- Anomaly Detection in grouped Time Series Data
+		- Hierarchical Structure-Based System
+		- Explainabilty
+		- Shintetical Anomaly injection
+		- Innovative Approach
+		- grammatical evolution
+		- Matrix Profile
+	- [[003 Abstract]]
+	- [[004 Search method]] ^32a09ce5-6c55-c740
+		- AI-Powered Search Engine (Consensus)
+		- Keywords: Hierarchical Anomaly Detection, Time Series Analysis, Combinatorial Optimization, Anomaly Injection, Matrix Profile, Grammatical Evolution
+		- Databases: PubMed, IEEE Xplore, Google Scholar, SpringerLink, MDPI, PLOS
+		- Selection Criteria: Relevance, Recency (Post-2015), Citation Impact (150+ Citations)
+		- Thematic Focus: Telecommunications, Time Series, Anomaly Detection, Genetic Programming
+		- Methodological Foundations
+	- [[005 Introduction]] ^0d02f5f5-2b04-6769
+		- Background and Motivation ^0125275b-e9ac-ed03
+			- DTx Member Company's Need
+			- Importance of Anomaly Detection in Time Series
+			- Data Disaggregation Challenges
+			- Partial Disaggregation Limitations
+			- Explainability
+		- Objectives and Expected Results ^e0a0017f-7b49-5e1d
+			- Develop Agnostic System for Hierarchical Structures
+			- Apply to Real Company Data
+			- Evaluate Performance
+			- Develop Python code
+			- Document in Scientific Article
+		- Document Organization ^7adad61f-8aa8-82fb
+			- Chapter 1: Introduction
+			- Chapter 2: Literature Review
+		- Methodological Approach - KDD Process (falar com professor) ^7ec98141-60c3-f01a
+			- Selection
+			- Preprocessing
+			- Transformation
+			- Data Mining
+			- Interpretation/Evaluation
+- Theory and Background (Definicoes minimas ^f6356140-0638-7db0
+	- [[010 Time Series]]
+		- Concept
+			- Definition
+				- Sequential data points collected over time
+				- Used to elicit hidden interdependencies
+				- Unravel plausible forecasts and temporal mechanisms
+		- Hierarchical Time Series
+			- Structured data organized into a hierarchy
+				- Geographical categories
+				- Product categories
+			- Enables disaggregation and aggregation at different levels
+			- Approaches (imagens para bottom up, top-down e middle-out
+				- Bottom-up
+				- Top-down
+				- Middle-out
+		- Grouped Time Series (image)
+			- Collections of time data grouped by characteristics
+			- Differs from hierarchical series (no disaggregation/aggregation)
+	- [[040 Anomaly Generation]]
+		- Definition
+		- Methods (simplicity methods)
+			- Statistical Approaches
+				- Sampling from extreme value distributions
+				- Modifying existing data points beyond normal ranges
+			- Machine Learning-based Approaches
+				- Generative Adversarial Networks (GANs)
+				- Variational Autoencoders (VAEs)
+			- Rule-based Approaches
+				- Creating anomalies based on predefined rules or domain knowledge
+	- [[060 Combinatorial Optimization]]
+		- Definition
+		- Purpose
+		- Characteristics
+		- Integration with Machine Learning
+		- Benefits
+		- Applications
+		- Challenges
+		- Future Directions
+	- [[061 Genetic Programming]]
+		- Definition
+			- Evolutionary computation technique
+			- Automatically creates computer programs to solve specific tasks
+			- Inspired by biological evolution
+		- Key Concepts
+			- Population: Set of candidate solutions (programs)
+			- Fitness Function: Evaluates how well a program solves the task
+			- Selection: Choose programs for reproduction based on fitness
+			- Crossover: Combine parts of two parent programs
+			- Mutation: Random changes to programs
+		- Representation
+			- Tree-based: Most common, represents programs as parse trees
+			- Linear: Represents programs as sequences of instructions
+			- Graph-based: Represents programs as graphs
+		- Process
+			- Initialization: Create initial population of random programs
+			- Evaluation: Assess fitness of each program
+			- Selection: Choose programs for reproduction
+			- Reproduction: Create new programs through crossover and mutation
+			- Replacement: Update population with new generation
+			- Termination: Stop when solution is found or resources exhausted
+		- Applications
+			- Symbolic regression
+			- Feature engineering
+			- Automatic programming
+			- Machine learning model optimization
+			- Robotics and control systems
+		- Advantages
+			- Can discover novel solutions
+			- No need for prior knowledge of solution structure
+			- Capable of handling complex, non-linear problems
+		- Challenges
+			- Computationally intensive
+			- May produce overly complex solutions (bloat)
+			- Difficulty in constraining solution space
+		- Extensions and Variants
+			- Grammatical Evolution
+			- Cartesian Genetic Programming
+			- Gene Expression Programming
+			- Multi-objective Genetic Programming
+		- Future Directions
+			- Integration with deep learning techniques
+			- Improving efficiency and scalability
+			- Application to new domains (e.g., quantum computing)
+	- [[050 Metrics]]
+		- Precision
+		- Recall
+	- Anomaly Detection
+		- Definition
+			- Finding patterns that do not conform to expected behavior
+			- Also known as outliers, discordant observations, exceptions, etc.
+			- anomaly pointed, context and grouped
+		- Univariate Anomaly Detection
+			- Analysis of a single variable time series
+			- Identifies points or sequences deviating from the norm
+			- Basic form of anomaly detection
+		- [[021 Matrix Profile]]
+- Literature Review ^e9c4e874-e53f-da30
+	- [[020 Anomaly Detection]] ^c0b19c28-a715-b058
+		- Hierarchical Time Series Anomaly Detection (fixed Application and approaches)
+			- Relevant for analyzing multi-level data in telecommunications
+			- Applications
+				- Customer usage analysis
+				- Network traffic analysis
+			- Approaches
+				- Multivariate Big Data Analysis (MBDA)
+				- TranAD model
+				- TimeAutoAD procedure
+		- Grouped Anomaly Detection (fixed applications) ^3b755e9c-9e5d-c568
+			- Detecting abnormal behavior from entities as a group
+			- Applications in spatiotemporal environments
+				- Traffic and transportation systems
+				- Smart cities
+				- Geoinformation systems
+	- [[030 TS AD in Telecommunication]] examples ^2cb5fe2f-dddb-f1cb
+		- Time Series Analysis in Telecommunications
+		- Importance
+		- Challenges
+		- Benefits
+		- um paragrafo explicar indicar com o exemplo anteriores
+	- [[062 Related Works]](verificar com o professor ^42cf8ac7-0cb6-0eb2
+		- Table to see the related reseach articles relevance
+	- Procurar por Trabalhos de grupos de time series sem ser AD
+- Materials and Methodology ^ef82b4d3-5fff-8d42
+	- [[100 Problem Formulation]] ^2dc213f9-3b61-6ba6
+		- Thesis Focus
+			- Hierarchical structure for anomaly detection
+			- grouped time series data
+		- Data Source
+			- Telecommunications operator (Vodafone)
+			- Collected from a network switch
+		- Data Description (Descricao do dataset e os graficos)
+			- Mobile communications records
+			- Entries and exits from operator's network
+		- Problem Statement
+			- Detect anomalies in grouped time series
+			- Goal: Improve service quality
+			- Goal: Enhance system reliability in telecommunications
+			- aumentar o desempenho de detecao de anomalias com o objectivo secundario de obter descricoes explicaveis dos grupos dos series temporais afetados pelas anomalias
+		- Challenges
+			- Varying granularity of information
+			- High grouped combinations of datasets
+		- Approaches
+			- Anomaly generation to detect anomaly
+			- MP
+			- Genetic Programming para procurar as hierarquias
+		- Expected Outcomes
+			- Improved anomaly detection performance
+			- Better understanding of grouped patterns
+			- Enhanced interpretability of results
+			- Practical applicability in telecom industry
+	- [[101 KKD execution]] ^050f8aa8-cc4e-92e9
+		- Where is better to put this?
+	- Introduction (show the image of workflow)
+	- Filtering and Cleaning
+	- [[120 Anomaly Injection Framework]] ^a134b5ae-6022-80fd
+		- Anomaly Generation Logic (`generate_anomaly`)
+		- Single Anomaly Insertion (`insert_anomaly`)
+		- Bulk Anomaly Injection (`insert_nanomaly`)
+		- Anomaly Significance Criteria
+	- [[130 Hierarchical Data Structuring]] ^86e76845-fad7-f644
+		- Aggregation Pipeline (`filter_and_aggregate`, `rm_empty_agg`)
+		- Hierarchy Creation (`create_hierarchy`, `flatten_dict_structure`)
+		- Leaf Node Identification (`set_leaf`)
+		- Final Hierarchy Assembly (`create_final_hierarchy`)
+	- [[140 Model Development and Evaluation]] ^fa301f82-fd72-e109
+		- AUC Calculation (`calculate_AUC`, `calculate_AUC_hierarchy`)
+		- Explicar os parametros utilizados e o que foi feito
+	- [[150 Genetic Programming Implementation]] ^504d3baa-3f12-fbb9
+		- Train-Test Split Strategy
+		- Phenotype Interpretation (`pheno_to_dict`)
+		- PonyGE Configuration (`grammar.pybnf`, `parameters.txt`) ^efc32a6d-8e5b-db48
+			- Evolutionary Workflow
+				- Population Initialization
+				- Fitness Evaluation (AUC-Driven)
+				- Crossover/Mutation Operations
+		- Genetic Programming Pipeline (`pipeline_hierarchy`)
+		- Hyperparameter Tuning (Manual Iterations for Populations/Generations)
+		- Comparison with Baseline Methods
+- Discussion and Results ^f75ae66e-2cd5-1841
+	- Table
+		- Baseline
+		- Population
+		- Generation
+	- Series temporais das anomalias
+	- arvore do phenotipo e  o dicionario
+	- Fitness em funcao da geracao
+	- Estisticas (Profundade
+- Conclusions and Future Works ^0a052343-d64c-793d
+	- Summary of Key Findings ^5576c147-cf9f-6e49
+		- Recap of main research objectives
+		- Major achievements and contributions
+		- Effectiveness of hierarchical approach in anomaly detection
+	- Implications of the Research ^8e6b9400-b422-d5ad
+		- Impact on telecommunications industry
+		- Potential for improving service quality and reliability
+		- Broader applications in time series analysis
+	- Future Research Directions ^6b5428f7-26b1-f133
+		- Refinement of algorithms
+		- Optimization of hierarchical structure
+		- Application to other domains
+		- More computation resources
+	- Personal Reflections ^c3f74319-6b9c-39ee
+		- Lessons learned during the research process
+		- Skills developed and areas for personal growth

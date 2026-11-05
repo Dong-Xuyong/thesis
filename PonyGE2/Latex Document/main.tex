@@ -1,0 +1,101 @@
+\documentclass[12pt,a4paper]{report}
+
+\usepackage[english]{babel}
+\usepackage{fontspec} 
+\usepackage{csquotes} % Recommended for biblatex
+\usepackage{hyperref}
+
+\usepackage[noend]{algpseudocode}
+%-- Font News Got T
+% \setmainfont{NewsGotT.ttf}
+% \setmainfont[
+% Ligatures=TeX,
+% AutoFakeSlant=0.20,
+% BoldFont=NewsGotTBold.ttf
+% ]{NewsGotT.ttf}
+% \newfontfamily\NewsGotTLight{NewsGotTLight.ttf}
+
+\usepackage{amsmath,amssymb}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{fontspec}
+\usepackage{pdfpages}
+\usepackage{titlesec}
+\usepackage{emptypage}
+\usepackage{multirow}
+\usepackage{tabularx}
+\usepackage{tabulary}
+\usepackage{url}
+\usepackage[bottom]{footmisc}
+\usepackage[nohyperlinks]{acronym}
+\usepackage{listings}
+\usepackage{grffile}
+
+\usepackage{pdflscape} % For landscape pages
+\usepackage{afterpage} % For page control
+
+% \usepackage{algorithmic}
+\usepackage{mathtools}
+
+\hypersetup{
+    colorlinks=false,
+    linktoc=all,
+    hidelinks
+}
+\usepackage{pdfpages} % Required for \includepdf
+
+% Load biblatex with biber and authoryear style
+\usepackage[
+  backend=biber,
+  style=authoryear,
+  uniquelist=false,
+  maxcitenames=2,
+  mincitenames=1
+]{biblatex}
+\addbibresource{references.bib} % Ensure this file exists
+
+% Remove bold or small caps from names
+\renewcommand*{\mkbibnamegiven}[1]{#1}
+\renewcommand*{\mkbibnamefamily}[1]{#1}
+\renewcommand*{\mkbibnameprefix}[1]{#1}
+\renewcommand*{\mkbibnamesuffix}[1]{#1}
+
+% Set the delimiter between multiple citations
+\renewcommand*{\multicitedelim}{\addsemicolon\space}
+
+% Set the delimiter between name and year
+\renewcommand*{\nameyeardelim}{\addcomma\space}
+
+\newcommand{\term}[1]{\ensuremath{\mathsf{#1}}}
+\newcommand{\nterm}[1]{\ensuremath{\langle\mathit{#1}\rangle}}
+\newcommand{\produces}{\ensuremath{::=}}
+\newcommand{\alt}{\ensuremath{\mid}}
+
+% Remove any formatting from \parencite
+\DeclareFieldFormat[parencite]{citehyperref}{#1}
+
+\begin{document}
+
+% Front matter
+\includepdf[fitpaper,pages=-]{assets/pdf/capa2.pdf}
+\includepdf[pages={1},fitpaper]{assets/pdf/contracapa_Dissertacao.pdf}
+\setcounter{page}{1}
+\pagenumbering{arabic}
+\includepdf[fitpaper,pages=-]{assets/pdf/capa1.pdf}
+
+% Include sections
+\input{0-atachements}
+\input{1-introduction}
+\input{2-theory-background}
+\input{4-materials-methodology}
+\input{5-results-discussion}
+\input{6-conclusions}
+
+% In empirical research, time series data are often modeled to capture dynamic relationships \parencite{Bean2018, Daugherty2018}. 
+% Other studies emphasize alternative approaches \parencite{ONeill2003}.
+
+\printbibliography
+
+\end{document}

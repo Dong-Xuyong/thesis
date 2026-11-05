@@ -1,0 +1,24 @@
+cells 5
+--- [0] code
+import numpy as np # linear algebra
+import pandas as pd # data processing, CSV file I/O (e.g. pd.read_csv)
+from pandas_profiling import ProfileReport
+>>> /opt/conda/lib/python3.10/site-packages/numba/core/decorators.py:262: NumbaDeprecationWarning: [1mnumba.generated_jit is deprecated. Please see the documentation at: https://numba.readthedocs.io/en/stable/reference/deprecation.html#deprecation-of-generated-jit for more information and advice on a suitable replacement.[0m
+>>>   warnings.warn(msg, NumbaDeprecationWarning)
+>>> /opt/conda/lib/python3.10/site-packages/visions/backends/shared/nan_handling.py:51: NumbaDeprecationWarning: [1mThe 'nopython' keyword argument was not supplied to the 'numba.jit' decorator. The implicit default value for this argument is currently False, but it will be changed to True in Numba 0.59.0. See https://numba.readthedocs.io/en/stable/reference/deprecation.html#deprecation-of-object-mode-fall-back-behaviour-when-using-jit for details.[0m
+>>>   def hasna(x: np.ndarray) -> bool:
+>>> /tmp/ipykernel_20/1241373353.py:3: DeprecationWarning: `import pandas_profiling` is going to be deprecated by April 1st. Please use `import ydata_profiling` instead.
+>>>   from pandas_profiling import ProfileReport
+>>> 
+--- [1] code
+df = pd.read_csv("/kaggle/input/mobileum/jul_aug_sep_oct_2022_msc_1.csv", sep=";")
+--- [2] code
+profile = ProfileReport(df)
+--- [3] code
+profile.to_file("data_profile_report.html")
+>>> Summarize dataset:   0%|          | 0/5 [00:00<?, ?it/s]
+>>> Generate report structure:   0%|          | 0/1 [00:00<?, ?it/s]
+>>> Render HTML:   0%|          | 0/1 [00:00<?, ?it/s]
+>>> Export report to file:   0%|          | 0/1 [00:00<?, ?it/s]
+--- [4] code
+

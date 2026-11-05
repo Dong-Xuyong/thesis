@@ -1,0 +1,1217 @@
+### 3-mobileum-2v_v22.ipynb  cells=38
+--- [0] markdown
+<a class="anchor" id="0"></a>
+# **Mubileum Duration Generation with VAE**
+--- [1] markdown
+<a class="anchor" id="0.1"></a>
+# **Table of Contents**
+
+- 1. [Setup](#1)
+- 2. [Data Preparation](#2)
+<!--     - 2.1 [Data Preparation for LSTM](#2.1) -->
+- 3. [EDA](#3)
+- 4. [Anomaly Detection](#4)
+- 5. [Anomaly Creation](#5)
+- 6. [Genetic Algoritm Otimization](#6)
+
+--- [2] markdown
+# **1. SetUp** <a class="anchor" id="1"></a>
+
+[Table of Contents](#0.1)
+--- [3] code
+# Data Manipulation and Analysis
+import numpy as np
+import pandas as pd
+from tqdm import tqdm 
+import random
+
+#Visualization
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# Scikit-Learn for Machine Learning
+from sklearn.model_selection import train_test_split, StratifiedKFold
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import roc_auc_score, confusion_matrix, ConfusionMatrixDisplay
+from sklearn.metrics import precision_recall_curve
+
+
+# Read a CSV file into a Pandas DataFrame
+df = pd.read_csv("/kaggle/input/mobileum/jul_aug_sep_oct_2022_msc_1.csv", sep=";")
+
+# Convert Start Date and Start Hour into a datetime object and set as index
+df['TIMESTAMP'] = pd.to_datetime(df['Start Date'] + ' ' + df['Start Hour'].astype(str), format='%d/%m/%Y %H')
+# df.set_index("TIMESTAMP", inplace=True)
+
+# Clean the #Events column, remove any non-numeric characters, fill NaNs with 0, and convert to integer
+df['#Events'] = df['#Events'].str.replace(r'[^\d.-]', '', regex=True)
+df['#Events'] = df['#Events'].fillna(0)
+df['#Events'] = pd.to_numeric(df['#Events']).astype(int)
+
+# Drop unnecessary columns
+# df.drop(columns=['Datasource', 'Start Date', 'Start Hour'], inplace=True) 
+df.drop(columns=['Datasource', 'Start Date', 'Start Hour', 'Event Duration'], inplace=True)
+
+# Drop duplicates
+df.drop_duplicates(inplace=True)
+# df=df.reset_index()
+--- [4] code
+filters = pd.read_csv("/kaggle/input/mobileum-empty-agg/not_empty_combinations.csv")
+--- [5] code
+def contain_condition(df, conditions):
+    if not conditions:
+        return False
+    pd_conditions = " & ".join([f'`{key}` == "{value}"' for key, value in conditions.items()])
+    return df.eval(pd_conditions).any()
+--- [6] markdown
+# **4. Anomaly Creation** <a class="anchor" id="4"></a>
+
+[Table of Contents](#0.1)
+--- [7] code
+def filter_and_aggregate(df, filter_conditions, hierarchy=False):
+    """
+    Filters the DataFrame based on given conditions and aggregates by summing up a specified column.
+    
+    Args:
+    - df: The original DataFrame.
+    - filter_conditions: A dictionary where keys are column names and values are the values to filter on.
+    
+    Returns:
+    - A new DataFrame with the filtered and aggregated data.
+    """
+    # Apply the filter conditions
+    df_fil = df.copy()
+    
+    for col, val in filter_conditions.items():
+        df_fil = df_fil[df_fil[col] == val]
+    
+    # Drop the columns used for filtering
+    df_fil.drop(columns=list(filter_conditions.keys()), inplace=True)
+    
+    # Group by 'TIMESTAMP' and sum up the '#Events' column
+    if hierarchy:
+        df_agg = df_fil.groupby('TIMESTAMP')[['#Events','Anomaly']].sum().reset_index()
+    else:
+        df_agg = df_fil.groupby('TIMESTAMP')['#Events'].sum().reset_index()
+    
+    return df_agg
+
+--- [8] code
+def generate_anomaly(mean, std, lower_bound=0):
+    """
+    Generate a random anomaly value.
+    
+    Parameters:
+    mean (float): The mean value of the normal data.
+    std (float): The standard deviation of the normal data.
+    lower_bound (int): The minimum value an anomaly can take, inclusive. Default is 0.
+    
+    Returns:
+    int: An anomalous data point.
+    """
+    print(mean, std)
+    upper_normal = mean + 3 * std
+    lower_normal = max(mean - (3 * std), lower_bound)
+    
+    
+    # Choose between an anomaly below or above the normal range.
+    anomaly_value = np.random.choice([upper_normal, lower_normal])
+    return anomaly_value
+
+--- [9] code
+def insert_anomaly(df, df_anomaly, index, unique_conditions, plot=False):
+    # Identify time-stamp at the given index
+    ts = df_anomaly.iloc[index]['TIMESTAMP']
+    
+    # Define window for calculating std and mean
+    start = max(index - 84, 0)
+    end = min(index + 83, len(df_anomaly) - 1)
+    
+    print(start, end)
+    print(ts)
+    # Calculate standard deviation and mean within the window and if the window is equal to 1
+    if start != end:
+        std = df_anomaly[start:end]['#Events'].std()
+        mean = df_anomaly[start:end]['#Events'].mean()
+        anomaly_value = generate_anomaly(mean, std)
+    else:
+        value = std= mean = df_anomaly.iloc[start]['#Events']
+
+        anomaly_value = np.random.choice([max(value-value/2,0), value*3/2])
+    
+
+    
+    mask = (df['TIMESTAMP'] == ts)
+
+    # Apply additional conditions from dictionary of conditions
+    for col, val in unique_conditions.items():
+        mask &= (df[col] == val)
+
+    # This mask can now be used to filter df
+    rows_with_ts = df[mask]
+
+    # Sum of '#Events' for these rows
+    sum_events = rows_with_ts['#Events'].sum()
+
+    # Calculate multiplier
+    m = anomaly_value / sum_events
+
+    # Check if the 'Anomaly' column exists
+    if 'Anomaly' not in df.columns:
+        df['Anomaly'] = 0
+    
+    print(len(df.loc[mask, '#Events']))
+    print(df.loc[mask, '#Events'])
+    # Apply multiplier and round to integer values
+    df.loc[mask, '#Events'] = (rows_with_ts['#Events'] * m).round().astype(int)
+    print(df.loc[mask, '#Events'])
+    # Update 'Anomaly' column only for rows where '#Events' 
+    df.loc[mask, 'Anomaly'] = 1
+    
+    
+    if plot == True:
+#         print(f"Anomaly value: {anomaly_value}")
+        plt.figure(figsize=(10, 6))
+        plt.plot(df_original["TIMESTAMP"], df_original["#Events"], label="Events", marker='o', linestyle='-', markersize=4)
+        plt.scatter(ts, anomaly_value, color='red', s=100, label='Anomaly', zorder=5)
+        plt.xlabel('TIMESTAMP')
+        plt.ylabel('#Events')
+        plt.title('Visualization of #Events with Anomaly Inserted')
+        plt.legend()
+        plt.grid(True)
+        plt.show()
+
+    
+    # Print actual and anomaly values
+    actual_value = df_anomaly.iloc[index]['#Events']
+    anomaly_value_df = df.loc[mask, '#Events'].sum()
+#     print("actual_value:", actual_value, "Anomaly_value:", anomaly_value,"Anomaly_value_df:", anomaly_value_df, "Mean:", mean, "Std:", std)
+    
+    return ts, mean, std, anomaly_value, anomaly_value_df, actual_value, unique_conditions
+--- [10] code
+def insert_nanomaly(df, n_anomalies, plot=False):
+    
+    columns = ['Call Type', 'Event Type', 'Subscriber Type', 'Traffic Type', 'Service Type', 'Partner Description']
+    
+    # Store anomalies for plotting
+    anomaly_records = []
+    
+    # Store unique conditions to ensure they are not repeated
+    used_conditions = set()
+    
+    df_anomaly = df.copy()
+    
+    # Check if the 'Anomaly' column exists
+    if 'Anomaly' not in df_anomaly.columns:
+        df_anomaly['Anomaly'] = 0
+    
+    for _ in tqdm(range(n_anomalies), desc='Inserting anomalies'):
+            while True:
+                # Ensure that the same new_columns and unique_conditions are not generated again
+                new_columns = [col for col in columns if random.random() < 0.5]
+                unique_conditions = {col: random.choice(df[col].unique()) for col in new_columns}
+                conditions_tuple = tuple(sorted(unique_conditions.items()))  # Need to convert to a hashable type to store in a set
+
+                if conditions_tuple not in used_conditions:
+                    
+
+                    # Retry if df_fil is empty, otherwise, break the loop
+                    if contain_condition(filters, unique_conditions):
+                        df_fil = filter_and_aggregate(df, unique_conditions)
+                        used_conditions.add(conditions_tuple)
+                        index = random.choice(df_fil.index)
+                        ts, mean, std, anomaly_value, anomaly_value_df, actual_value, conditions = insert_anomaly(df_anomaly, df_fil, index, unique_conditions, plot=False)
+                        anomaly_records.append((ts, mean, std, anomaly_value, anomaly_value_df, actual_value, conditions))
+                        break  # Successfully inserted an anomaly, can exit loop
+                    else:
+                        print("This aggregation is empty, retrying with new unique conditions.")
+    
+    
+    anomalies_info_df = pd.DataFrame(anomaly_records, columns=['TIMESTAMP', 'Mean', 'STD', 'Anomaly Value', 'Anomaly Value from DF', 'Actual Value', 'Used Conditions'])
+    aux= filter_and_aggregate(df_anomaly, {}, True)
+    # Merge dataframes based on timestamp
+    mask = aux["TIMESTAMP"].isin(anomalies_info_df["TIMESTAMP"])
+    filtered_aux = aux[mask]
+
+    if plot:
+        plt.figure(figsize=(10, 6))
+        plt.plot(aux["TIMESTAMP"], aux["#Events"], label="Events", marker='o', linestyle='-', markersize=4)
+
+        # Extract timestamps and anomaly values for plotting
+#         ts_values, anomaly_values = zip(*anomaly_records) if anomaly_records else ([], [])
+        plt.scatter(filtered_aux["TIMESTAMP"], filtered_aux["#Events"], color='red', s=100, label='Anomaly', zorder=5)
+
+        plt.xlabel('TIMESTAMP')
+        plt.ylabel('#Events')
+        plt.title('Visualization of #Events with Anomaly Inserted')
+        plt.legend()
+        plt.grid(True)
+        plt.show()
+    
+#     ?<create a dataframe which store the (ts, mean, std, anomaly_value, anomaly_value_df, actual_value and used_conditions)
+    
+
+    # Optional: print out the anomaly records for debugging
+#     print(anomaly_records)
+    
+    return df_anomaly, anomalies_info_df
+
+--- [11] markdown
+1. get the anomaly_value and the ts with the function. 
+2. go to the original df get all the rows with the same ts (TIMESTAMP)
+3. from all the row calculate the sum of column (#Events)
+4. calculate the multiplier witch m = anomaly_value/ sum of column (#Events)
+5. use the multiplier to all rows of the #Events and do the round to get int
+6. Create an new columns witch name "Anomaly" with 0 or 1, which all row which has column 
+7. gerate an orignal and modified df
+--- [12] code
+df_anomaly, df_info = insert_nanomaly(df, 50, plot=True)
+>>> Inserting anomalies:   0%|          | 0/50 [00:00<?, ?it/s]
+>>> This aggregation is empty, retrying with new unique conditions.
+>>> This aggregation is empty, retrying with new unique conditions.
+>>> 0 148
+>>> 2022-07-20 17:00:00
+>>> 356916.0878378378 199678.7123427096
+>>> 
+>>> Inserting anomalies:   2%|▏         | 1/50 [00:01<01:14,  1.53s/it]
+>>> 241
+>>> 28118       63
+>>> 28126    74468
+>>> 28127       12
+>>> 28128        1
+>>> 28129       22
+>>>          ...  
+>>> 28515        1
+>>> 28516       13
+>>> 28517        1
+>>> 28518       82
+>>> 28519        9
+>>> Name: #Events, Length: 241, dtype: int64
+>>> 28118    0
+>>> 28126    0
+>>> 28127    0
+>>> 28128    0
+>>> 28129    0
+>>>         ..
+>>> 28515    0
+>>> 28516    0
+>>> 28
+>>> Inserting anomalies:   4%|▍         | 2/50 [00:03<01:16,  1.59s/it]
+>>> 1
+>>> 336533    1
+>>> Name: #Events, dtype: int64
+>>> 336533    3
+>>> Name: #Events, dtype: int64
+>>> This aggregation is empty, retrying with new unique conditions.
+>>> 0 21
+>>> 2022-08-27 00:00:00
+>>> 2.9523809523809526 3.513917905645926
+>>> 
+>>> Inserting anomalies:   6%|▌         | 3/50 [00:05<01:22,  1.75s/it]
+>>> 1
+>>> 425604    11
+>>> Name: #Events, dtype: int64
+>>> 425604    0
+>>> Name: #Events, dtype: int64
+>>> This aggregation is empty, retrying with new unique conditions.
+>>> This aggregation is empty, retrying with new unique conditions.
+>>> This aggregation is empty, retrying with new unique conditions.
+>>> This aggregation is empty
+>>> Inserting anomalies:   8%|▊         | 4/50 [00:07<01:28,  1.93s/it]
+>>> 1
+>>> 756104    2875
+>>> Name: #Events, dtype: int64
+>>> 756104    136373
+>>> Name: #Events, dtype: int64
+>>> 219 386
+>>> 2022-07-30 15:00:00
+>>> 106256.46107784432 91289.33315554957
+>>> 
+>>> Inserting anomalies:  10%|█         | 5/50 [00:08<01:12,  1.62s/it]
+>>> 196
+>>> 131126       2
+>>> 131127       1
+>>> 131128      53
+>>> 131129    1115
+>>> 131130      17
+>>>           ... 
+>>> 131520       5
+>>> 131521       8
+>>> 131522      33
+>>> 131523    1464
+>>> 131524      23
+>>> Name: #Events, Length: 196, dtype: int64
+>>> 131126    0
+>>> 131127    0
+>>> 131128    0
+>>> 131129    0
+>>> 131130    0
+>>>          ..
+>>> 131520    0
+>>> 131521
+>>> Inserting anomalies:  12%|█▏        | 6/50 [00:10<01:21,  1.85s/it]
+>>> 1
+>>> 600604    5
+>>> Name: #Events, dtype: int64
+>>> 600604    8
+>>> Name: #Events, dtype: int64
+>>> This aggregation is empty, retrying with new unique conditions.
+>>> 1160 1327
+>>> 2022-09-07 20:00:00
+>>> 2509.5988023952095 1054.1444373032343
+>>> 
+>>> Inserting anomalies:  14%|█▍        | 7/50 [00:12<01:13,  1.71s/it]
+>>> 72
+>>> 553992     8
+>>> 553993     1
+>>> 553994     8
+>>> 553995    91
+>>> 553996     9
+>>>           ..
+>>> 554432     1
+>>> 554433     4
+>>> 554434     1
+>>> 554435     2
+>>> 554436     5
+>>> Name: #Events, Length: 72, dtype: int64
+>>> 553992    0
+>>> 553993    0
+>>> 553994    0
+>>> 553995    0
+>>> 553996    0
+>>>          ..
+>>> 554432    0
+>>> 554433    0
+>>> 554434    0
+>>> 554435
+>>> Inserting anomalies:  16%|█▌        | 8/50 [00:13<01:03,  1.51s/it]
+>>> 1
+>>> 527271    1
+>>> Name: #Events, dtype: int64
+>>> 527271    15
+>>> Name: #Events, dtype: int64
+>>> This aggregation is empty, retrying with new unique conditions.
+>>> 166 296
+>>> 2022-09-28 18:00:00
+>>> 1.646153846153846 1.2191084457522523
+>>> 
+>>> Inserting anomalies:  18%|█▊        | 9/50 [00:14<01:04,  1.57s/it]
+>>> 1
+>>> 786055    3
+>>> Name: #Events, dtype: int64
+>>> 786055    5
+>>> Name: #Events, dtype: int64
+>>> This aggregation is empty, retrying with new unique conditions.
+>>> This aggregation is empty, retrying with new unique conditions.
+>>> 1449 1616
+>>> 2022-09-19 21:00:00
+>>> 4888.425149700599 3289.583053755666
+>>> 
+>>> Inserting anomalies:  20%|██        | 10/50 [00:17<01:13,  1.85s/it]
+>>> 1
+>>> 687026    4794
+>>> Name: #Events, dtype: int64
+>>> 687026    0
+>>> Name: #Events, dtype: int64
+>>> 1258 1425
+>>> 2022-09-11 22:00:00
+>>> 515846.9760479042 563131.6045989429
+>>> 
+>>> Inserting anomalies:  22%|██▏       | 11/50 [00:18<01:01,  1.58s/it]
+>>> 6
+>>> 598581       416
+>>> 598627         1
+>>> 598780     22618
+>>> 598921       528
+>>> 598939        16
+>>> 598976    143924
+>>> Name: #Events, dtype: int64
+>>> 598581    0
+>>> 598627    0
+>>> 598780    0
+>>> 598921    0
+>>> 598939    0
+>>> 598976    0
+>>> Name: #Events, dtype: int64
+>>> This aggregation is empty, retrying with new unique conditions.
+>>> This
+>>> Inserting anomalies:  24%|██▍       | 12/50 [00:19<00:57,  1.52s/it]
+>>> 3
+>>> 740258     1
+>>> 740489     4
+>>> 740643    21
+>>> Name: #Events, dtype: int64
+>>> 740258    0
+>>> 740489    0
+>>> 740643    0
+>>> Name: #Events, dtype: int64
+>>> This aggregation is empty, retrying with new unique conditions.
+>>> 724 891
+>>> 2022-08-27 11:00:00
+>>> 34.26946107784431 36.550416925373874
+>>> 
+>>> Inserting anomalies:  26%|██▌       | 13/50 [00:21<01:00,  1.63s/it]
+>>> 2
+>>> 429717      9
+>>> 429955    114
+>>> Name: #Events, dtype: int64
+>>> 429717    0
+>>> 429955    0
+>>> Name: #Events, dtype: int64
+>>> This aggregation is empty, retrying with new unique conditions.
+>>> 1505 1672
+>>> 2022-09-22 05:00:00
+>>> 71967.70658682635 45403.47551135018
+>>> 
+>>> Inserting anomalies:  28%|██▊       | 14/50 [00:23<00:58,  1.62s/it]
+>>> 3
+>>> 712784     3762
+>>> 712879    10127
+>>> 712880     5595
+>>> Name: #Events, dtype: int64
+>>> 712784     40195
+>>> 712879    108203
+>>> 712880     59780
+>>> Name: #Events, dtype: int64
+>>> 0 20
+>>> 2022-09-10 22:00:00
+>>> 13.95 21.446322221819415
+>>> 
+>>> Inserting anomalies:  30%|███       | 15/50 [00:24<00:51,  1.48s/it]
+>>> 1
+>>> 588144    3
+>>> Name: #Events, dtype: int64
+>>> 588144    78
+>>> Name: #Events, dtype: int64
+>>> This aggregation is empty, retrying with new unique conditions.
+>>> This aggregation is empty, retrying with new unique conditions.
+>>> This aggregation is empty, retrying with new unique conditions.
+>>> This aggregation is empty
+>>> Inserting anomalies:  32%|███▏      | 16/50 [00:26<00:56,  1.65s/it]
+>>> 1648 1815
+>>> 2022-09-28 04:00:00
+>>> 88217.59281437125 55123.41338570238
+>>> 7
+>>> 778993    1091
+>>> 778994    4197
+>>> 779035    1656
+>>> 779138     140
+>>> 779139    2197
+>>> 779287    1138
+>>> 779288       6
+>>> Name: #Events, dtype: int64
+>>> 778993    0
+>>> 778994    0
+>>> 779035    0
+>>> 779138    0
+>>> 779139    0
+>>> 779287    0
+>>> 779288    0
+>>> Name: #Events, 
+>>> Inserting anomalies:  34%|███▍      | 17/50 [00:27<00:50,  1.52s/it]
+>>> 6
+>>> 169414        90
+>>> 169487     18686
+>>> 169594       455
+>>> 169599    176311
+>>> 169600      6082
+>>> 169710       267
+>>> Name: #Events, dtype: int64
+>>> 169414    0
+>>> 169487    0
+>>> 169594    0
+>>> 169599    0
+>>> 169600    0
+>>> 169710    0
+>>> Name: #Events, dtype: int64
+>>> This aggregation is empty, retrying with new unique conditions.
+>>> 709 
+>>> Inserting anomalies:  36%|███▌      | 18/50 [00:28<00:44,  1.40s/it]
+>>> 6
+>>> 349872      81
+>>> 350065    7474
+>>> 350066    1127
+>>> 350126     205
+>>> 350213      80
+>>> 350219    2847
+>>> Name: #Events, dtype: int64
+>>> 349872      723
+>>> 350065    66727
+>>> 350066    10062
+>>> 350126     1830
+>>> 350213      714
+>>> 350219    25418
+>>> Name: #Events, dtype: int64
+>>> This aggregation is empty, retrying with new unique cond
+>>> Inserting anomalies:  38%|███▊      | 19/50 [00:29<00:41,  1.32s/it]
+>>> 4
+>>> 165508      25
+>>> 165635      22
+>>> 165759    4228
+>>> 165760    7107
+>>> Name: #Events, dtype: int64
+>>> 165508    0
+>>> 165635    0
+>>> 165759    0
+>>> 165760    0
+>>> Name: #Events, dtype: int64
+>>> 395 562
+>>> 2022-08-06 23:00:00
+>>> 85553.38922155689 48635.5998808412
+>>> 
+>>> Inserting anomalies:  40%|████      | 20/50 [00:31<00:41,  1.37s/it]
+>>> 187
+>>> 209087      94
+>>> 209094      26
+>>> 209095     589
+>>> 209096      95
+>>> 209097     288
+>>>           ... 
+>>> 209522      44
+>>> 209523    1082
+>>> 209524      76
+>>> 209525      77
+>>> 209526       5
+>>> Name: #Events, Length: 187, dtype: int64
+>>> 209087     459
+>>> 209094     127
+>>> 209095    2874
+>>> 209096     464
+>>> 209097    1405
+>>>           ... 
+>>> 
+>>> Inserting anomalies:  42%|████▏     | 21/50 [00:32<00:40,  1.40s/it]
+>>> 1
+>>> 354006    2
+>>> Name: #Events, dtype: int64
+>>> 354006    0
+>>> Name: #Events, dtype: int64
+>>> This aggregation is empty, retrying with new unique conditions.
+>>> 1310 1477
+>>> 2022-09-14 02:00:00
+>>> 51829.68263473054 32118.13309442131
+>>> 
+>>> Inserting anomalies:  44%|████▍     | 22/50 [00:34<00:37,  1.35s/it]
+>>> 2
+>>> 623090    4230
+>>> 623310    1116
+>>> Name: #Events, dtype: int64
+>>> 623090    117250
+>>> 623310     30934
+>>> Name: #Events, dtype: int64
+>>> 236 403
+>>> 2022-09-12 02:00:00
+>>> 16.005988023952096 24.201089541834765
+>>> 
+>>> Inserting anomalies:  46%|████▌     | 23/50 [00:35<00:36,  1.36s/it]
+>>> 1
+>>> 600561    18
+>>> Name: #Events, dtype: int64
+>>> 600561    0
+>>> Name: #Events, dtype: int64
+>>> This aggregation is empty, retrying with new unique conditions.
+>>> 730 897
+>>> 2022-08-22 02:00:00
+>>> 55.43712574850299 72.75959299234572
+>>> 
+>>> Inserting anomalies:  48%|████▊     | 24/50 [00:36<00:34,  1.31s/it]
+>>> 1
+>>> 371442    1
+>>> Name: #Events, dtype: int64
+>>> 371442    274
+>>> Name: #Events, dtype: int64
+>>> 7 100
+>>> 2022-10-06 14:00:00
+>>> 2.5698924731182795 2.3377704422133085
+>>> 
+>>> Inserting anomalies:  50%|█████     | 25/50 [00:37<00:30,  1.20s/it]
+>>> 1
+>>> 875743    9
+>>> Name: #Events, dtype: int64
+>>> 875743    10
+>>> Name: #Events, dtype: int64
+>>> This aggregation is empty, retrying with new unique conditions.
+>>> 0 158
+>>> 2022-07-21 03:00:00
+>>> 67808.34177215189 40269.47666361495
+>>> 
+>>> Inserting anomalies:  52%|█████▏    | 26/50 [00:38<00:28,  1.17s/it]
+>>> 9
+>>> 32504     631
+>>> 32505       3
+>>> 32540       5
+>>> 32557    1079
+>>> 32558    4503
+>>> 32559       2
+>>> 32597    1277
+>>> 32598    1772
+>>> 32631     135
+>>> Name: #Events, dtype: int64
+>>> 32504    12652
+>>> 32505       60
+>>> 32540      100
+>>> 32557    21635
+>>> 32558    90288
+>>> 32559       40
+>>> 32597    25605
+>>> 32598    35530
+>>> 32631     2707
+>>> Name: #Ev
+>>> Inserting anomalies:  54%|█████▍    | 27/50 [00:41<00:35,  1.54s/it]
+>>> 5
+>>> 668169    2388
+>>> 668202    5699
+>>> 668215       3
+>>> 668250       1
+>>> 668354    2324
+>>> Name: #Events, dtype: int64
+>>> 668169     53657
+>>> 668202    128054
+>>> 668215        67
+>>> 668250        22
+>>> 668354     52219
+>>> Name: #Events, dtype: int64
+>>> This aggregation is empty, retrying with new unique conditions.
+>>> This aggregation i
+>>> Inserting anomalies:  56%|█████▌    | 28/50 [00:42<00:32,  1.46s/it]
+>>> 1
+>>> 127667    13
+>>> Name: #Events, dtype: int64
+>>> 127667    0
+>>> Name: #Events, dtype: int64
+>>> 1167 1334
+>>> 2022-09-08 03:00:00
+>>> 99008.56886227545 56178.18494287308
+>>> 
+>>> Inserting anomalies:  58%|█████▊    | 29/50 [00:43<00:28,  1.37s/it]
+>>> 205
+>>> 557084    4420
+>>> 557085       7
+>>> 557086      30
+>>> 557090      68
+>>> 557091       3
+>>>           ... 
+>>> 557401       1
+>>> 557402       3
+>>> 557403       5
+>>> 557404       5
+>>> 557405      14
+>>> Name: #Events, Length: 205, dtype: int64
+>>> 557084    0
+>>> 557085    0
+>>> 557086    0
+>>> 557090    0
+>>> 557091    0
+>>>          ..
+>>> 557401    0
+>>> 557402
+>>> Inserting anomalies:  60%|██████    | 30/50 [00:46<00:34,  1.70s/it]
+>>> 1
+>>> 879087    1
+>>> Name: #Events, dtype: int64
+>>> 879087    2
+>>> Name: #Events, dtype: int64
+>>> This aggregation is empty, retrying with new unique conditions.
+>>> This aggregation is empty, retrying with new unique conditions.
+>>> This aggregation is empty, retrying with new unique conditions.
+>>> 1480 1647
+>>> 2022-09-21 07:00
+>>> Inserting anomalies:  62%|██████▏   | 31/50 [00:47<00:32,  1.70s/it]
+>>> 3
+>>> 702341     1
+>>> 702445     5
+>>> 702447    24
+>>> Name: #Events, dtype: int64
+>>> 702341    0
+>>> 702445    0
+>>> 702447    0
+>>> Name: #Events, dtype: int64
+>>> 972 1139
+>>> 2022-08-31 00:00:00
+>>> 79873.35329341318 49251.080304105206
+>>> 
+>>> Inserting anomalies:  64%|██████▍   | 32/50 [00:48<00:27,  1.52s/it]
+>>> 11
+>>> 468314        2
+>>> 468315       31
+>>> 468338     5581
+>>> 468386    13004
+>>> 468413        1
+>>> 468414        7
+>>> 468466       11
+>>> 468467       14
+>>> 468491     2741
+>>> 468492        7
+>>> 468565        1
+>>> Name: #Events, dtype: int64
+>>> 468314    0
+>>> 468315    0
+>>> 468338    0
+>>> 468386    0
+>>> 468413    0
+>>> 468414    0
+>>> 468466    0
+>>> 468467   
+>>> Inserting anomalies:  66%|██████▌   | 33/50 [00:50<00:25,  1.51s/it]
+>>> 3
+>>> 654535    27073
+>>> 654659        6
+>>> 654753    30745
+>>> Name: #Events, dtype: int64
+>>> 654535    66054
+>>> 654659       15
+>>> 654753    75014
+>>> Name: #Events, dtype: int64
+>>> 
+>>> Inserting anomalies:  68%|██████▊   | 34/50 [00:50<00:19,  1.23s/it]
+>>> 35 202
+>>> 2022-07-24 12:00:00
+>>> 39.11377245508982 58.583008676256725
+>>> 2
+>>> 66965     2
+>>> 67015    27
+>>> Name: #Events, dtype: int64
+>>> 66965     15
+>>> 67015    200
+>>> Name: #Events, dtype: int64
+>>> This aggregation is empty, retrying with new unique conditions.
+>>> This aggregation is empty, retrying with new unique conditions.
+>>> 
+>>> Inserting anomalies:  70%|███████   | 35/50 [00:52<00:20,  1.34s/it]
+>>> 1
+>>> 941840    3
+>>> Name: #Events, dtype: int64
+>>> 941840    0
+>>> Name: #Events, dtype: int64
+>>> 1360 1527
+>>> 2022-09-16 09:00:00
+>>> 186.1437125748503 244.8310771342398
+>>> 
+>>> Inserting anomalies:  72%|███████▏  | 36/50 [00:53<00:16,  1.19s/it]
+>>> 5
+>>> 648586     9
+>>> 648592    15
+>>> 648633    17
+>>> 648828     3
+>>> 648830    67
+>>> Name: #Events, dtype: int64
+>>> 648586    0
+>>> 648592    0
+>>> 648633    0
+>>> 648828    0
+>>> 648830    0
+>>> Name: #Events, dtype: int64
+>>> 573 740
+>>> 2022-08-14 11:00:00
+>>> 101.04790419161677 137.4078358537637
+>>> 
+>>> Inserting anomalies:  74%|███████▍  | 37/50 [00:54<00:14,  1.12s/it]
+>>> 3
+>>> 288498      2
+>>> 288549    578
+>>> 288596      6
+>>> Name: #Events, dtype: int64
+>>> 288498      2
+>>> 288549    506
+>>> 288596      5
+>>> Name: #Events, dtype: int64
+>>> 56 223
+>>> 2022-07-26 12:00:00
+>>> 8.065868263473053 10.725006094053313
+>>> 
+>>> Inserting anomalies:  76%|███████▌  | 38/50 [00:55<00:13,  1.14s/it]
+>>> 1
+>>> 87742    17
+>>> Name: #Events, dtype: int64
+>>> 87742    0
+>>> Name: #Events, dtype: int64
+>>> 603 770
+>>> 2022-08-15 15:00:00
+>>> 61337.05988023952 31546.526437334633
+>>> 
+>>> Inserting anomalies:  78%|███████▊  | 39/50 [00:56<00:13,  1.20s/it]
+>>> 98
+>>> 300893      1
+>>> 300934      1
+>>> 300935      1
+>>> 300936      8
+>>> 300937      1
+>>>          ... 
+>>> 301352     49
+>>> 301353     63
+>>> 301354    161
+>>> 301355     18
+>>> 301356      2
+>>> Name: #Events, Length: 98, dtype: int64
+>>> 300893      2
+>>> 300934      2
+>>> 300935      2
+>>> 300936     14
+>>> 300937      2
+>>>          ... 
+>>> 301352     86
+>>> 30135
+>>> Inserting anomalies:  80%|████████  | 40/50 [00:58<00:14,  1.44s/it]
+>>> 1
+>>> 86419    15
+>>> Name: #Events, dtype: int64
+>>> 86419    125
+>>> Name: #Events, dtype: int64
+>>> This aggregation is empty, retrying with new unique conditions.
+>>> 1497 1664
+>>> 2022-09-21 21:00:00
+>>> 7356.071856287425 4771.91455928023
+>>> 
+>>> Inserting anomalies:  82%|████████▏ | 41/50 [01:00<00:12,  1.38s/it]
+>>> 1
+>>> 709558    5950
+>>> Name: #Events, dtype: int64
+>>> 709558    0
+>>> Name: #Events, dtype: int64
+>>> 509 676
+>>> 2022-08-11 17:00:00
+>>> 304.38922155688624 288.22593736071474
+>>> 
+>>> Inserting anomalies:  84%|████████▍ | 42/50 [01:01<00:10,  1.35s/it]
+>>> 8
+>>> 259893      9
+>>> 259942    264
+>>> 259943      4
+>>> 260013     10
+>>> 260205    101
+>>> 260264     84
+>>> 260291     48
+>>> 260292     38
+>>> Name: #Events, dtype: int64
+>>> 259893     19
+>>> 259942    553
+>>> 259943      8
+>>> 260013     21
+>>> 260205    212
+>>> 260264    176
+>>> 260291    101
+>>> 260292     80
+>>> Name: #Events, dtype: int64
+>>> This aggregation i
+>>> Inserting anomalies:  86%|████████▌ | 43/50 [01:02<00:09,  1.36s/it]
+>>> 452
+>>> 536651        25
+>>> 536652       268
+>>> 536653         1
+>>> 536654        56
+>>> 536657     10504
+>>>            ...  
+>>> 537108        17
+>>> 537109         7
+>>> 537110    258700
+>>> 537111         8
+>>> 537112        24
+>>> Name: #Events, Length: 452, dtype: int64
+>>> 536651        81
+>>> 536652       864
+>>> 536653         3
+>>> 536654       180
+>>> 
+>>> Inserting anomalies:  88%|████████▊ | 44/50 [01:03<00:07,  1.20s/it]
+>>> 1
+>>> 773489    9
+>>> Name: #Events, dtype: int64
+>>> 773489    17
+>>> Name: #Events, dtype: int64
+>>> This aggregation is empty, retrying with new unique conditions.
+>>> This aggregation is empty, retrying with new unique conditions.
+>>> This aggregation is empty, retrying with new unique conditions.
+>>> 
+>>> Inserting anomalies:  90%|█████████ | 45/50 [01:04<00:06,  1.23s/it]
+>>> 305 472
+>>> 2022-08-03 05:00:00
+>>> 172097.70658682636 99483.17727220229
+>>> 17
+>>> 168565        2
+>>> 168613    10018
+>>> 168614     5050
+>>> 168639        8
+>>> 168648    10019
+>>> 168653     3336
+>>> 168667        4
+>>> 168672       30
+>>> 168735    10312
+>>> 168745     4307
+>>> 168775        4
+>>> 168781     2759
+>>> 168807       21
+>>> 168878     9625
+>>> 168896  
+>>> Inserting anomalies:  92%|█████████▏| 46/50 [01:06<00:05,  1.43s/it]
+>>> 1
+>>> 343654    2
+>>> Name: #Events, dtype: int64
+>>> 343654    0
+>>> Name: #Events, dtype: int64
+>>> 251 418
+>>> 2022-07-31 23:00:00
+>>> 74434.59880239521 61953.8111380635
+>>> 
+>>> Inserting anomalies:  94%|█████████▍| 47/50 [01:08<00:04,  1.38s/it]
+>>> 2
+>>> 144758    21787
+>>> 144785    17099
+>>> Name: #Events, dtype: int64
+>>> 144758    0
+>>> 144785    0
+>>> Name: #Events, dtype: int64
+>>> 0 3
+>>> 2022-08-06 21:00:00
+>>> 4.0 3.0
+>>> 
+>>> Inserting anomalies:  96%|█████████▌| 48/50 [01:08<00:02,  1.26s/it]
+>>> 1
+>>> 208269    1
+>>> Name: #Events, dtype: int64
+>>> 208269    0
+>>> Name: #Events, dtype: int64
+>>> This aggregation is empty, retrying with new unique conditions.
+>>> This aggregation is empty, retrying with new unique conditions.
+>>> This aggregation is empty, retrying with new unique conditions.
+>>> This aggregation is empty,
+>>> Inserting anomalies:  98%|█████████▊| 49/50 [01:11<00:01,  1.63s/it]
+>>> 1
+>>> 356192    1
+>>> Name: #Events, dtype: int64
+>>> 356192    5
+>>> Name: #Events, dtype: int64
+>>> This aggregation is empty, retrying with new unique conditions.
+>>> This aggregation is empty, retrying with new unique conditions.
+>>> This aggregation is empty, retrying with new unique conditions.
+>>> 572 739
+>>> 2022-09-26 01:00:0
+>>> Inserting anomalies: 100%|██████████| 50/50 [01:14<00:00,  1.49s/it]
+>>> 3
+>>> 755197    1
+>>> 755268    1
+>>> 755429    1
+>>> Name: #Events, dtype: int64
+>>> 755197    13
+>>> 755268    13
+>>> 755429    13
+>>> Name: #Events, dtype: int64
+>>> 
+>>> 
+>>> 
+>>> <Figure size 1000x600 with 1 Axes>
+--- [13] code
+df_info
+>>>              TIMESTAMP          Mean            STD  Anomaly Value  \
+>>> 0  2022-07-20 17:00:00  3.569161e+05  199678.712343   0.000000e+00   
+>>> 1  2022-08-18 19:00:00  1.333333e+00       0.577350   3.065384e+00   
+>>> 2  2022-08-27 00:00:00  2.952381e+00       3.513918   0.000000e+00   
+>>> 3  2022-09-26 03:00:
+--- [14] code
+size = len(df[df["#Events"] != df_anomaly["#Events"]])
+print(f"Size of number o anomalies inserted into desaggregated df: {size}")
+>>> Size of number o anomalies inserted into desaggregated df: 1582
+>>> 
+--- [15] markdown
+## Number of examples (rows) on aggreagated with all features with return not an empty dataframe
+--- [16] code
+row_plus_two = len(filters[filters["Number of examples (rows)"]>2])
+row_equal_two = len(filters[filters["Number of examples (rows)"]==2])
+row_one = len(filters[filters["Number of examples (rows)"]==1])
+
+print(f"Dataframe with more than 2 rows: {row_plus_two}\nDataframe with 2 rows: {row_equal_two}\nDataframe with one row: {row_one} ")
+>>> Dataframe with more than 2 rows: 1374
+>>> Dataframe with 2 rows: 54
+>>> Dataframe with one row: 127 
+>>> 
+--- [17] markdown
+### Selecting one df_anomaly and analysis how this affect global and locally on the dataset
+--- [18] code
+index = np.random.choice(range(len(df_info)-1))
+center_ts = df_info.iloc[index]["TIMESTAMP"]
+condictions = df_info.iloc[index]["Used Conditions"]
+(index, center_ts, condictions)
+>>> (41,
+>>>  Timestamp('2022-08-11 17:00:00'),
+>>>  {'Event Type': 'TERMINATED',
+>>>   'Subscriber Type': 'Other',
+>>>   'Service Type': 'NOT-ROAMING'})
+--- [19] markdown
+### Random select one anomaly from generated anomalies
+--- [20] code
+index = np.random.choice(range(len(df_info)-1))
+center_ts = df_info.iloc[index]["TIMESTAMP"]
+conditions = df_info.iloc[index]["Used Conditions"]
+static_value = list(conditions.values())[0]
+column = list(conditions.keys())[0]
+print(f" INDEX = {index} \n timestamp Selected: {center_ts} \n Conditions: {conditions} \n FIX filter: {static_value} => {column}")
+>>>  INDEX = 34 
+>>>  timestamp Selected: 2022-10-12 11:00:00 
+>>>  Conditions: {'Event Type': 'ORIGINATED', 'Partner Description': 'P_0114'} 
+>>>  FIX filter: ORIGINATED => Event Type
+>>> 
+--- [21] code
+## Reducing the redundancy to with number of rows equals 2110
+filters_fil =filters[(filters[column]==static_value) &(filters["Number of examples (rows)"]==2110)]
+
+## Remove all columns with unique values
+rm_columns = list(filters_fil.columns[filters_fil.nunique() == 1])
+
+new_filters = filters_fil.drop(rm_columns, axis = 1)
+index = np.random.choice(len(new_filters)-1)
+plot_filters = new_filters.iloc[index].values
+print(f"Df after filtering {column} => {static_value} : \n{filters_fil}")
+print(f"After removing all columns with unique values: \n{new_filters}")
+print(f"Columns with unique values: {rm_columns}")
+print(f"New filters to use in plot: {plot_filters}")
+>>> Df after filtering Event Type => ORIGINATED : 
+>>>      Call Type  Event Type Subscriber Type Traffic Type Service Type  \
+>>> 0          SMS  ORIGINATED        Postpaid      OFF-NET  NOT-ROAMING   
+>>> 1          SMS  ORIGINATED        Postpaid          INT  NOT-ROAMING   
+>>> 2          SMS  ORIGINATED        Pos
+--- [22] code
+df_anomaly_filters = df_anomaly[(df_anomaly["TIMESTAMP"]==center_ts) & (df_anomaly[column]==static_value)]
+rm_columns = list(df_anomaly_filters.columns[df_anomaly_filters.nunique() == 1])
+df_anomaly_new_filters = df_anomaly_filters.drop(rm_columns, axis=1)
+--- [23] markdown
+### Desagreggated dataframe from aggregation and Possible aggreation after filters with 2110 rows (which include all timestamps) 
+--- [24] code
+print(df_anomaly_new_filters)
+print("\n\n")
+print(new_filters)
+print("\n\n")
+
+print(len(df_anomaly_new_filters), len(new_filters))
+>>>        Call Type Subscriber Type Traffic Type Partner Description  #Events  \
+>>> 941322       SMS         Prepaid      OFF-NET              P_0001      146   
+>>> 941323       SMS       Roamer In          INT              P_0036        2   
+>>> 941324       SMS       Roamer In          INT              P_0071 
+--- [25] code
+import matplotlib.pyplot as plt
+
+def plot_figure(df_anomaly, df_original, center_ts, conditions, title_add):
+    df_anomaly = df_anomaly.reset_index()
+
+    # Encontrando o índice do timestamp central
+    center_index = df_anomaly[df_anomaly["TIMESTAMP"] == center_ts].index[0]
+
+    low = max(center_index - 50, 0)
+    high = min(center_index + 50, len(df_anomaly) - 1)
+
+    plot_df_anomaly = df_anomaly.iloc[low:high]
+    plot_df_original = df_original.iloc[low:high]
+
+    title = ', '.join(map(str, conditions.values()))
+
+    fig, ax = plt.subplots(figsize=(12, 6))
+
+    ax.plot(plot_df_original['TIMESTAMP'], plot_df_original['#Events'], label='Original', marker='o')
+    ax.plot(plot_df_anomaly['TIMESTAMP'], plot_df_anomaly['#Events'], label='Anomalia', marker='x')
+    ax.set_title(f"{title_add}: {title}")
+    ax.set_xlabel('Timestamp')
+    ax.set_ylabel('#Eventos')
+    ax.legend()
+
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
+
+--- [26] code
+df_original_agg = filter_and_aggregate(df, {}, False)
+df_original_cond = filter_and_aggregate(df, condictions, False)
+
+df_anomaly_agg = filter_and_aggregate(df_anomaly, {}, False)
+df_anomaly_cond = filter_and_aggregate(df_anomaly, condictions, False)
+--- [27] code
+center_ts
+>>> Timestamp('2022-10-12 11:00:00')
+--- [28] code
+plot_figure(df_anomaly_agg, df_original_agg, center_ts, {}, "Sem condicoes")
+>>> <Figure size 1200x600 with 1 Axes>
+--- [29] code
+conditions
+>>> {'Event Type': 'ORIGINATED', 'Partner Description': 'P_0114'}
+--- [30] code
+plot_figure(df_anomaly_agg, df_original_agg, center_ts, {}, "Without conditions")
+>>> <Figure size 1200x600 with 1 Axes>
+--- [31] code
+available_categories = {
+    'Call Type': df['Call Type'].unique().tolist(),
+    'Event Type': df['Event Type'].unique().tolist(),
+    'Subscriber Type': df['Subscriber Type'].unique().tolist(),
+    'Traffic Type': df['Traffic Type'].unique().tolist(),
+    'Service Type': df['Service Type'].unique().tolist(),
+    'Partner Description': df['Partner Description'].unique().tolist(),
+    'STOP': False
+}
+
+
+def revert_key_value_mapping(available_categories):
+    reversed_mapping = {}
+    for key, values in available_categories.items():
+        if isinstance(values, list):  # Ensure the value is iterable
+            for value in values:
+                if value not in reversed_mapping:
+                    reversed_mapping[value] = []
+                reversed_mapping[value].append(key)
+        else:
+            # Handle non-list values (like the 'STOP' flag)
+            value = values
+            if value not in reversed_mapping:
+                reversed_mapping[value] = []
+            reversed_mapping[value].append(key)
+    return reversed_mapping
+--- [32] code
+rt_available_categories = revert_key_value_mapping(available_categories)
+--- [33] code
+dictionary = {column:static_value}
+df_original_cond = filter_and_aggregate(df, dictionary, False)
+df_anomaly_cond = filter_and_aggregate(df_anomaly, dictionary, False)
+plot_figure(df_anomaly_cond, df_original_cond, center_ts, dictionary, "WithConditions: ")
+>>> <Figure size 1200x600 with 1 Axes>
+--- [35] code
+import itertools
+
+
+def create_dictionaries(static_filter, filters, category_dict):
+    all_combinations = []
+    for r in range(1, len(filters) + 1):
+        for combination in itertools.combinations(filters, r):
+            current_dict = {}
+            
+            current_dict[static_filter[0]] = static_filter[1]
+            for item in combination:
+                category = category_dict.get(item)[0]
+                
+                if category:
+                    # Assigning the filter to the correct category in the dictionary
+                    
+                    current_dict[category] = item
+            if current_dict:  # Make sure the dictionary is not empty
+                all_combinations.append(current_dict)
+    return all_combinations
+
+# Generating dictionaries
+static_filter = [column, static_value]
+resulting_dictionaries = create_dictionaries(static_filter, plot_filters, rt_available_categories)
+
+
+# Print each generated dictionary
+for dictionary in resulting_dictionaries:
+    df_original_cond = filter_and_aggregate(df, dictionary, False)
+    df_anomaly_cond = filter_and_aggregate(df_anomaly, dictionary, False)
+    plot_figure(df_anomaly_cond, df_original_cond, center_ts, dictionary, "WithConditions: ")
+>>> <Figure size 1200x600 with 1 Axes>
+>>> <Figure size 1200x600 with 1 Axes>
+>>> <Figure size 1200x600 with 1 Axes>
+>>> <Figure size 1200x600 with 1 Axes>
+>>> <Figure size 1200x600 with 1 Axes>
+>>> <Figure size 1200x600 with 1 Axes>
+>>> <Figure size 1200x600 with 1 Axes>
+>>> <Figure size 1200x600 with 1 Axes>
+>>> <Figure size 1200x600 with 1 Axes>
+>>> <Figure size 1200x600 with 1 Axes>
+>>> <Figure size 1200x600 with 1 Axes>
+>>> <Figure size 1200x600 with 1 Axes>
+>>> <Figure size 1200x600 with 1 Axes>
+>>> <Figure size 1200x600 with 1 Axes>
+>>> <Figure size 1200x600 with 1 Axes>

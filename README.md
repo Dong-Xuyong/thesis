@@ -2,7 +2,9 @@
 
 A mobile-first tracker for a thesis: chapters, supervisor meetings, deadlines, and the UMinho re-entry reference.
 
-The live app is [https://dong-xuyong.github.io/thesis/](https://dong-xuyong.github.io/thesis/). It is a static site with no build step. This repo holds the app, not the thesis file.
+The live app is [https://dong-xuyong.github.io/thesis/](https://dong-xuyong.github.io/thesis/). It is a static site with no build step.
+
+The dissertation and the PonyGE2 project are in [`PonyGE2/`](PonyGE2/). Compile from `PonyGE2/Latex Document` with XeLaTeX and Biber (`xelatex main`, `biber main`, `xelatex main`, `xelatex main`). If XeLaTeX is blocked, run `pdflatex -jobname=main build-pdflatex.tex` three times; that reuses `main.bbl`.
 
 ## Data
 

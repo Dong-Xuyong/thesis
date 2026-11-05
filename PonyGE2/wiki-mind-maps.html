@@ -1,0 +1,1076 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Wiki Mind Map</title>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --bg-elevated: #171a22;
+      --bg-hover: #1e2230;
+      --border: #2a3040;
+      --text: #e8ecf4;
+      --text-muted: #9aa3b8;
+      --accent: #9a8cff;
+      --accent-dim: rgba(154, 140, 255, 0.15);
+      --radius: 12px;
+      --sidebar-w: 300px;
+      --header-h: 56px;
+      --font: "Segoe UI", system-ui, -apple-system, sans-serif;
+      --mono: "Cascadia Code", "Fira Code", Consolas, monospace;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    button, input { font: inherit; }
+
+    .app {
+      display: grid;
+      grid-template-rows: var(--header-h) 1fr;
+      height: 100vh;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 0 20px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-elevated);
+    }
+
+    header h1 {
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+
+    .stats {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .search-wrap {
+      flex: 1;
+      max-width: 360px;
+      margin-left: auto;
+      position: relative;
+    }
+
+    .search-wrap input {
+      width: 100%;
+      padding: 8px 12px 8px 34px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--text);
+      outline: none;
+    }
+
+    .search-wrap input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-dim);
+    }
+
+    .search-wrap svg {
+      position: absolute;
+      left: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 16px;
+      height: 16px;
+      color: var(--text-muted);
+      pointer-events: none;
+    }
+
+    .search-results {
+      position: absolute;
+      top: calc(100% + 6px);
+      left: 0;
+      right: 0;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      max-height: 280px;
+      overflow-y: auto;
+      z-index: 50;
+      display: none;
+    }
+
+    .search-results.open { display: block; }
+
+    .search-hit {
+      display: block;
+      width: 100%;
+      text-align: left;
+      padding: 10px 12px;
+      border: none;
+      background: transparent;
+      color: var(--text);
+      cursor: pointer;
+    }
+
+    .search-hit:hover, .search-hit.active { background: var(--bg-hover); }
+
+    .search-hit small {
+      display: block;
+      color: var(--text-muted);
+      font-size: 11px;
+      margin-top: 2px;
+    }
+
+    .mode-tabs {
+      display: flex;
+      gap: 4px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 3px;
+    }
+
+    .mode-tabs button {
+      padding: 6px 14px;
+      border: none;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .mode-tabs button.active {
+      background: var(--accent-dim);
+      color: var(--accent);
+    }
+
+    .main {
+      display: grid;
+      grid-template-columns: var(--sidebar-w) 1fr;
+      min-height: 0;
+    }
+
+    .sidebar {
+      border-right: 1px solid var(--border);
+      background: var(--bg-elevated);
+      overflow-y: auto;
+      padding: 16px 12px;
+    }
+
+    .breadcrumb {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-bottom: 14px;
+      line-height: 1.5;
+    }
+
+    .breadcrumb button {
+      border: none;
+      background: none;
+      color: var(--accent);
+      cursor: pointer;
+      padding: 0;
+      font-size: 11px;
+    }
+
+    .breadcrumb button:hover { text-decoration: underline; }
+
+    .nav-section {
+      margin-bottom: 6px;
+    }
+
+    .nav-btn {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+      padding: 10px 10px;
+      border: none;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--text);
+      cursor: pointer;
+      text-align: left;
+      font-size: 13px;
+    }
+
+    .nav-btn:hover { background: var(--bg-hover); }
+
+    .nav-btn.active {
+      background: var(--accent-dim);
+      color: var(--text);
+    }
+
+    .nav-btn .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .nav-btn .meta {
+      margin-left: auto;
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .nav-sub {
+      padding-left: 20px;
+    }
+
+    .nav-sub .nav-btn {
+      font-size: 12px;
+      padding: 7px 10px;
+    }
+
+    .content {
+      overflow-y: auto;
+      padding: 24px 28px;
+      min-height: 0;
+    }
+
+    .panel-title {
+      font-size: 22px;
+      font-weight: 600;
+      letter-spacing: -0.03em;
+      margin-bottom: 6px;
+    }
+
+    .panel-copy {
+      color: var(--text-muted);
+      font-size: 14px;
+      margin-bottom: 24px;
+      max-width: 640px;
+      line-height: 1.5;
+    }
+
+    .section-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      gap: 14px;
+    }
+
+    .section-card {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px;
+      background: var(--bg-elevated);
+      cursor: pointer;
+      transition: border-color 0.15s, transform 0.15s;
+      text-align: left;
+      color: inherit;
+    }
+
+    .section-card:hover {
+      border-color: var(--accent);
+      transform: translateY(-2px);
+    }
+
+    .section-card .swatch {
+      width: 36px;
+      height: 4px;
+      border-radius: 2px;
+      margin-bottom: 12px;
+    }
+
+    .section-card h3 {
+      font-size: 15px;
+      margin-bottom: 6px;
+    }
+
+    .section-card p {
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.45;
+      margin-bottom: 12px;
+    }
+
+    .section-card .counts {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .chip-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 20px;
+    }
+
+    .chip {
+      padding: 6px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--bg-elevated);
+      color: var(--text);
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    .chip:hover, .chip.active {
+      border-color: var(--accent);
+      background: var(--accent-dim);
+    }
+
+    .concept-detail {
+      max-width: 720px;
+    }
+
+    .concept-detail .slug {
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+    }
+
+    .concept-detail .desc {
+      font-size: 15px;
+      line-height: 1.6;
+      margin-bottom: 18px;
+    }
+
+    .tag-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 18px;
+    }
+
+    .tag {
+      font-size: 11px;
+      padding: 3px 8px;
+      border-radius: 6px;
+      background: var(--bg-hover);
+      color: var(--text-muted);
+    }
+
+    .related-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .related-list button {
+      text-align: left;
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--bg-elevated);
+      color: var(--text);
+      cursor: pointer;
+      width: 100%;
+    }
+
+    .related-list button:hover { border-color: var(--accent); }
+
+    .related-list small {
+      display: block;
+      color: var(--text-muted);
+      font-size: 11px;
+      margin-top: 2px;
+    }
+
+    .section-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+      margin: 20px 0 10px;
+    }
+
+    .atlas-wrap {
+      position: relative;
+      height: calc(100vh - var(--header-h) - 48px);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: radial-gradient(ellipse at center, #141820 0%, var(--bg) 70%);
+      overflow: hidden;
+    }
+
+    .atlas-wrap canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    .atlas-hud {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      right: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      pointer-events: none;
+    }
+
+    .atlas-hud .badge {
+      background: rgba(15, 17, 23, 0.85);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 12px;
+      color: var(--text-muted);
+      backdrop-filter: blur(8px);
+    }
+
+    .atlas-hud .badge strong { color: var(--text); }
+
+    .atlas-legend {
+      position: absolute;
+      bottom: 12px;
+      left: 12px;
+      background: rgba(15, 17, 23, 0.85);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 11px;
+      color: var(--text-muted);
+      backdrop-filter: blur(8px);
+    }
+
+    .empty {
+      color: var(--text-muted);
+      font-size: 14px;
+      padding: 40px 0;
+    }
+
+    .loading, .error {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      color: var(--text-muted);
+      font-size: 14px;
+    }
+
+    .error { color: #ff7b7b; }
+
+    @media (max-width: 900px) {
+      .main { grid-template-columns: 1fr; }
+      .sidebar { display: none; }
+      .content { padding: 16px; }
+    }
+  </style>
+</head>
+<body>
+  <div id="root" class="loading">Loading wiki mind map data…</div>
+
+  <script>
+    const state = {
+      data: null,
+      mode: "explorer",
+      level: "sections",
+      sectionId: null,
+      subsectionId: null,
+      conceptSlug: null,
+      searchQuery: "",
+      searchOpen: false,
+      searchIndex: -1,
+    };
+
+    const atlas = {
+      canvas: null,
+      ctx: null,
+      nodes: [],
+      edges: [],
+      animId: null,
+      hovered: null,
+      selected: null,
+      scopeLabel: "",
+    };
+
+    async function loadData() {
+      const res = await fetch("wiki-mind-maps-data.json");
+      if (!res.ok) throw new Error(`Failed to load data (${res.status})`);
+      return res.json();
+    }
+
+    function sectionById(id) {
+      return state.data.sections.find((s) => s.id === id);
+    }
+
+    function conceptBySlug(slug) {
+      return state.data.concepts[slug];
+    }
+
+    function subsectionById(section, subsectionId) {
+      return section.subsections.find((s) => s.id === subsectionId);
+    }
+
+    function edgesForSlugs(slugs) {
+      const set = new Set(slugs);
+      return state.data.edges.filter((e) => set.has(e.a) && set.has(e.b));
+    }
+
+    function setNav(level, sectionId = null, subsectionId = null, conceptSlug = null) {
+      state.level = level;
+      state.sectionId = sectionId;
+      state.subsectionId = subsectionId;
+      state.conceptSlug = conceptSlug;
+      render();
+    }
+
+    function searchConcepts(query) {
+      const q = query.trim().toLowerCase();
+      if (!q) return [];
+      return Object.values(state.data.concepts)
+        .filter((c) => {
+          const hay = [c.title, c.slug, c.desc, ...(c.tags || []), ...(c.keys || [])]
+            .join(" ")
+            .toLowerCase();
+          return hay.includes(q);
+        })
+        .slice(0, 12);
+    }
+
+    function breadcrumbHTML() {
+      const parts = [];
+      parts.push(`<button data-crumb="sections">All sections</button>`);
+      if (state.sectionId) {
+        const sec = sectionById(state.sectionId);
+        parts.push(`<span> › </span><button data-crumb="section">${esc(sec.title)}</button>`);
+      }
+      if (state.subsectionId) {
+        const sec = sectionById(state.sectionId);
+        const sub = subsectionById(sec, state.subsectionId);
+        parts.push(`<span> › </span><button data-crumb="subsection">${esc(sub.title)}</button>`);
+      }
+      if (state.conceptSlug) {
+        const c = conceptBySlug(state.conceptSlug);
+        parts.push(`<span> › </span><span>${esc(c.title)}</span>`);
+      }
+      return parts.join("");
+    }
+
+    function sidebarHTML() {
+      if (state.mode !== "explorer") return `<div class="empty">Switch to Explorer for the section tree.</div>`;
+
+      let html = `<div class="breadcrumb">${breadcrumbHTML()}</div>`;
+
+      if (state.level === "sections") {
+        html += state.data.sections
+          .map(
+            (s) => `
+          <div class="nav-section">
+            <button class="nav-btn" data-section="${s.id}">
+              <span class="dot" style="background:${s.color}"></span>
+              <span>${esc(s.title)}</span>
+              <span class="meta">${s.concepts.length}</span>
+            </button>
+          </div>`
+          )
+          .join("");
+        return html;
+      }
+
+      const sec = sectionById(state.sectionId);
+      html += sec.subsections
+        .map(
+          (sub) => `
+        <div class="nav-section">
+          <button class="nav-btn ${state.subsectionId === sub.id && state.level === "subsection" ? "active" : ""}"
+            data-subsection="${sub.id}">
+            <span>${esc(sub.title)}</span>
+            <span class="meta">${sub.concepts.length}</span>
+          </button>
+          <div class="nav-sub">
+            ${sub.concepts
+              .map((slug) => {
+                const c = conceptBySlug(slug);
+                return `<button class="nav-btn ${state.conceptSlug === slug ? "active" : ""}" data-concept="${slug}">
+                  <span>${esc(c.title)}</span>
+                </button>`;
+              })
+              .join("")}
+          </div>
+        </div>`
+        )
+        .join("");
+      return html;
+    }
+
+    function explorerContentHTML() {
+      if (state.level === "sections" && !state.conceptSlug) {
+        return `
+          <div class="panel-title">Explore the wiki</div>
+          <div class="panel-copy">
+            ${state.data.conceptCount} concept pages across ${state.data.sections.length} literature themes.
+            ${state.data.edgeCount} edges from <code>## Related concepts</code> wikilinks.
+            Pick a section to drill down — no flat hairball.
+          </div>
+          <div class="section-grid">
+            ${state.data.sections
+              .map(
+                (s) => `
+              <button class="section-card" data-section-card="${s.id}">
+                <div class="swatch" style="background:${s.color}"></div>
+                <h3>${esc(s.title)}</h3>
+                <p>${esc(s.copy)}</p>
+                <div class="counts">${s.concepts.length} concepts · ${s.edgeCount} internal edges · ${s.subsections.length} clusters</div>
+              </button>`
+              )
+              .join("")}
+          </div>`;
+      }
+
+      if (state.conceptSlug) {
+        const c = conceptBySlug(state.conceptSlug);
+        const sec = sectionById(c.section);
+        const sub = subsectionById(sec, c.subsection);
+        const related = (c.related || [])
+          .map((slug) => {
+            const rc = conceptBySlug(slug);
+            if (!rc) return "";
+            return `<li><button data-related="${slug}"><strong>${esc(rc.title)}</strong><small>${esc(rc.desc || rc.slug)}</small></button></li>`;
+          })
+          .join("");
+        return `
+          <div class="concept-detail">
+            <div class="slug">${esc(c.path)}</div>
+            <div class="panel-title">${esc(c.title)}</div>
+            <div class="panel-copy">${esc(sec.title)} › ${esc(sub.title)}</div>
+            <div class="tag-row">${(c.tags || []).map((t) => `<span class="tag">${esc(t)}</span>`).join("")}</div>
+            <div class="desc">${esc(c.desc || "No definition excerpt found.")}</div>
+            <div class="section-label">Keywords</div>
+            <div class="chip-grid">${(c.keys || []).map((k) => `<span class="chip">${esc(k)}</span>`).join("")}</div>
+            <div class="section-label">Related concepts (${(c.related || []).length})</div>
+            <ul class="related-list">${related || "<li class='empty'>No related concept links in this page.</li>"}</ul>
+          </div>`;
+      }
+
+      const sec = sectionById(state.sectionId);
+      const sub = state.subsectionId ? subsectionById(sec, state.subsectionId) : null;
+      const concepts = sub ? sub.concepts : sec.concepts;
+      const title = sub ? sub.title : sec.title;
+      const copy = sub ? `Cluster within ${sec.title}` : sec.copy;
+
+      return `
+        <div class="panel-title">${esc(title)}</div>
+        <div class="panel-copy">${esc(copy)}</div>
+        <div class="section-label">Concepts in this ${sub ? "subsection" : "section"}</div>
+        <div class="chip-grid">
+          ${concepts
+            .map((slug) => {
+              const c = conceptBySlug(slug);
+              return `<button class="chip" data-concept-chip="${slug}">${esc(c.title)}</button>`;
+            })
+            .join("")}
+        </div>
+        ${sub ? "" : `
+          <div class="section-label">Subsections</div>
+          <div class="section-grid">
+            ${sec.subsections
+              .map(
+                (s) => `
+              <button class="section-card" data-subsection-card="${s.id}">
+                <div class="swatch" style="background:${sec.color}"></div>
+                <h3>${esc(s.title)}</h3>
+                <p>${s.concepts.length} concepts · ${s.edgeCount} edges</p>
+              </button>`
+              )
+              .join("")}
+          </div>`}
+      `;
+    }
+
+    function esc(str) {
+      return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    function render() {
+      const root = document.getElementById("root");
+      const searchHits = state.searchQuery ? searchConcepts(state.searchQuery) : [];
+
+      root.innerHTML = `
+        <div class="app">
+          <header>
+            <h1>Wiki Mind Map</h1>
+            <span class="stats">${state.data.conceptCount} concepts · ${state.data.edgeCount} edges</span>
+            <div class="search-wrap">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3-3"/></svg>
+              <input id="search" type="search" placeholder="Search concepts…" value="${esc(state.searchQuery)}" autocomplete="off" />
+              <div class="search-results ${state.searchOpen && searchHits.length ? "open" : ""}" id="search-results">
+                ${searchHits
+                  .map(
+                    (c, i) => `
+                  <button class="search-hit ${i === state.searchIndex ? "active" : ""}" data-search-hit="${c.slug}">
+                    <strong>${esc(c.title)}</strong>
+                    <small>${esc(c.desc || c.slug)}</small>
+                  </button>`
+                  )
+                  .join("")}
+              </div>
+            </div>
+            <div class="mode-tabs">
+              <button class="${state.mode === "explorer" ? "active" : ""}" data-mode="explorer">Explorer</button>
+              <button class="${state.mode === "atlas" ? "active" : ""}" data-mode="atlas">Atlas</button>
+            </div>
+          </header>
+          <div class="main">
+            <aside class="sidebar" id="sidebar">${sidebarHTML()}</aside>
+            <main class="content" id="content">
+              ${state.mode === "explorer" ? explorerContentHTML() : `<div class="atlas-wrap" id="atlas"><canvas id="atlas-canvas"></canvas><div class="atlas-hud"><div class="badge" id="atlas-scope"></div></div><div class="atlas-legend">Drag nodes · click to inspect · scoped graph only</div></div>`}
+            </main>
+          </div>
+        </div>
+      `;
+
+      bindEvents();
+      if (state.mode === "atlas") initAtlas();
+    }
+
+    function bindEvents() {
+      document.querySelectorAll("[data-mode]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          state.mode = btn.dataset.mode;
+          render();
+        });
+      });
+
+      document.querySelectorAll("[data-section]").forEach((btn) => {
+        btn.addEventListener("click", () => setNav("section", btn.dataset.section));
+      });
+
+      document.querySelectorAll("[data-section-card]").forEach((btn) => {
+        btn.addEventListener("click", () => setNav("section", btn.dataset.sectionCard));
+      });
+
+      document.querySelectorAll("[data-subsection]").forEach((btn) => {
+        btn.addEventListener("click", () => setNav("subsection", state.sectionId, btn.dataset.subsection));
+      });
+
+      document.querySelectorAll("[data-subsection-card]").forEach((btn) => {
+        btn.addEventListener("click", () => setNav("subsection", state.sectionId, btn.dataset.subsectionCard));
+      });
+
+      document.querySelectorAll("[data-concept]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const c = conceptBySlug(btn.dataset.concept);
+          setNav("concept", c.section, c.subsection, c.slug);
+        });
+      });
+
+      document.querySelectorAll("[data-concept-chip]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const c = conceptBySlug(btn.dataset.conceptChip);
+          setNav("concept", c.section, c.subsection, c.slug);
+        });
+      });
+
+      document.querySelectorAll("[data-related]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const c = conceptBySlug(btn.dataset.related);
+          setNav("concept", c.section, c.subsection, c.slug);
+        });
+      });
+
+      document.querySelectorAll("[data-crumb]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const target = btn.dataset.crumb;
+          if (target === "sections") setNav("sections");
+          else if (target === "section") setNav("section", state.sectionId);
+          else if (target === "subsection") setNav("subsection", state.sectionId, state.subsectionId);
+        });
+      });
+
+      const search = document.getElementById("search");
+      if (search) {
+        search.addEventListener("input", (e) => {
+          state.searchQuery = e.target.value;
+          state.searchOpen = true;
+          state.searchIndex = -1;
+          render();
+          document.getElementById("search")?.focus();
+        });
+        search.addEventListener("keydown", (e) => {
+          const hits = searchConcepts(state.searchQuery);
+          if (e.key === "ArrowDown") {
+            e.preventDefault();
+            state.searchIndex = Math.min(state.searchIndex + 1, hits.length - 1);
+            render();
+            document.getElementById("search")?.focus();
+          } else if (e.key === "ArrowUp") {
+            e.preventDefault();
+            state.searchIndex = Math.max(state.searchIndex - 1, 0);
+            render();
+            document.getElementById("search")?.focus();
+          } else if (e.key === "Enter" && hits.length) {
+            const idx = state.searchIndex >= 0 ? state.searchIndex : 0;
+            const c = hits[idx];
+            state.searchOpen = false;
+            state.searchQuery = "";
+            setNav("concept", c.section, c.subsection, c.slug);
+          } else if (e.key === "Escape") {
+            state.searchOpen = false;
+            render();
+          }
+        });
+        search.addEventListener("blur", () => {
+          setTimeout(() => {
+            state.searchOpen = false;
+            render();
+          }, 150);
+        });
+      }
+
+      document.querySelectorAll("[data-search-hit]").forEach((btn) => {
+        btn.addEventListener("mousedown", (e) => {
+          e.preventDefault();
+          const c = conceptBySlug(btn.dataset.searchHit);
+          state.searchOpen = false;
+          state.searchQuery = "";
+          setNav("concept", c.section, c.subsection, c.slug);
+        });
+      });
+    }
+
+    function currentScopeSlugs() {
+      if (state.conceptSlug) return [state.conceptSlug, ...(conceptBySlug(state.conceptSlug).related || [])];
+      if (state.subsectionId && state.sectionId) {
+        const sec = sectionById(state.sectionId);
+        return subsectionById(sec, state.subsectionId).concepts;
+      }
+      if (state.sectionId) return sectionById(state.sectionId).concepts;
+      return state.data.sections.flatMap((s) => s.concepts);
+    }
+
+    function scopeLabel() {
+      if (state.conceptSlug) {
+        const c = conceptBySlug(state.conceptSlug);
+        return `Neighbourhood: ${c.title}`;
+      }
+      if (state.subsectionId && state.sectionId) {
+        const sec = sectionById(state.sectionId);
+        const sub = subsectionById(sec, state.subsectionId);
+        return `${sec.title} › ${sub.title}`;
+      }
+      if (state.sectionId) return sectionById(state.sectionId).title;
+      return "All sections (overview)";
+    }
+
+    function initAtlas() {
+      if (atlas.animId) cancelAnimationFrame(atlas.animId);
+
+      const canvas = document.getElementById("atlas-canvas");
+      const wrap = document.getElementById("atlas");
+      const scopeEl = document.getElementById("atlas-scope");
+      if (!canvas || !wrap) return;
+
+      atlas.canvas = canvas;
+      atlas.ctx = canvas.getContext("2d");
+      atlas.scopeLabel = scopeLabel();
+      if (scopeEl) scopeEl.innerHTML = `<strong>Atlas scope:</strong> ${esc(atlas.scopeLabel)}`;
+
+      const slugs = [...new Set(currentScopeSlugs())];
+      const edges = edgesForSlugs(slugs);
+      const sec = state.sectionId ? sectionById(state.sectionId) : null;
+      const color = sec ? sec.color : "#9a8cff";
+
+      const rect = wrap.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+      canvas.style.width = `${rect.width}px`;
+      canvas.style.height = `${rect.height}px`;
+      atlas.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+      const cx = rect.width / 2;
+      const cy = rect.height / 2;
+      const radius = Math.min(rect.width, rect.height) * 0.32;
+
+      atlas.nodes = slugs.map((slug, i) => {
+        const c = conceptBySlug(slug);
+        const angle = (i / slugs.length) * Math.PI * 2 - Math.PI / 2;
+        return {
+          slug,
+          title: c.title,
+          x: cx + Math.cos(angle) * radius,
+          y: cy + Math.sin(angle) * radius,
+          vx: 0,
+          vy: 0,
+          r: state.conceptSlug === slug ? 22 : 16,
+          color: sectionById(c.section)?.color || color,
+          fixed: false,
+        };
+      });
+
+      atlas.edges = edges;
+      atlas.hovered = null;
+      atlas.selected = state.conceptSlug;
+
+      let dragging = null;
+
+      function nodeAt(x, y) {
+        for (let i = atlas.nodes.length - 1; i >= 0; i--) {
+          const n = atlas.nodes[i];
+          const dx = x - n.x;
+          const dy = y - n.y;
+          if (dx * dx + dy * dy <= n.r * n.r) return n;
+        }
+        return null;
+      }
+
+      function pointerPos(evt) {
+        const r = canvas.getBoundingClientRect();
+        return { x: evt.clientX - r.left, y: evt.clientY - r.top };
+      }
+
+      canvas.onmousemove = (evt) => {
+        const p = pointerPos(evt);
+        if (dragging) {
+          dragging.x = p.x;
+          dragging.y = p.y;
+          dragging.vx = 0;
+          dragging.vy = 0;
+          return;
+        }
+        atlas.hovered = nodeAt(p.x, p.y);
+        canvas.style.cursor = atlas.hovered ? "pointer" : "default";
+      };
+
+      canvas.onmousedown = (evt) => {
+        const p = pointerPos(evt);
+        dragging = nodeAt(p.x, p.y);
+        if (dragging) dragging.fixed = true;
+      };
+
+      window.onmouseup = () => {
+        dragging = null;
+      };
+
+      canvas.onclick = (evt) => {
+        const p = pointerPos(evt);
+        const n = nodeAt(p.x, p.y);
+        if (!n) return;
+        const c = conceptBySlug(n.slug);
+        setNav("concept", c.section, c.subsection, c.slug);
+      };
+
+      function simulate() {
+        const nodes = atlas.nodes;
+        const width = rect.width;
+        const height = rect.height;
+
+        for (let i = 0; i < nodes.length; i++) {
+          for (let j = i + 1; j < nodes.length; j++) {
+            const a = nodes[i];
+            const b = nodes[j];
+            let dx = b.x - a.x;
+            let dy = b.y - a.y;
+            let dist = Math.sqrt(dx * dx + dy * dy) || 1;
+            const force = 4200 / (dist * dist);
+            const fx = (dx / dist) * force;
+            const fy = (dy / dist) * force;
+            if (!a.fixed) { a.vx -= fx; a.vy -= fy; }
+            if (!b.fixed) { b.vx += fx; b.vy += fy; }
+          }
+        }
+
+        for (const edge of atlas.edges) {
+          const a = nodes.find((n) => n.slug === edge.a);
+          const b = nodes.find((n) => n.slug === edge.b);
+          if (!a || !b) continue;
+          let dx = b.x - a.x;
+          let dy = b.y - a.y;
+          let dist = Math.sqrt(dx * dx + dy * dy) || 1;
+          const force = (dist - 140) * 0.04;
+          const fx = (dx / dist) * force;
+          const fy = (dy / dist) * force;
+          if (!a.fixed) { a.vx += fx; a.vy += fy; }
+          if (!b.fixed) { b.vx -= fx; b.vy -= fy; }
+        }
+
+        for (const n of nodes) {
+          if (n.fixed) continue;
+          n.vx += (cx - n.x) * 0.002;
+          n.vy += (cy - n.y) * 0.002;
+          n.vx *= 0.85;
+          n.vy *= 0.85;
+          n.x += n.vx;
+          n.y += n.vy;
+          n.x = Math.max(40, Math.min(width - 40, n.x));
+          n.y = Math.max(40, Math.min(height - 40, n.y));
+        }
+      }
+
+      function draw() {
+        const ctx = atlas.ctx;
+        ctx.clearRect(0, 0, rect.width, rect.height);
+
+        for (const edge of atlas.edges) {
+          const a = atlas.nodes.find((n) => n.slug === edge.a);
+          const b = atlas.nodes.find((n) => n.slug === edge.b);
+          if (!a || !b) continue;
+          ctx.beginPath();
+          ctx.moveTo(a.x, a.y);
+          ctx.lineTo(b.x, b.y);
+          ctx.strokeStyle = "rgba(154, 140, 255, 0.25)";
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+        }
+
+        for (const n of atlas.nodes) {
+          const active = atlas.selected === n.slug || atlas.hovered === n;
+          ctx.beginPath();
+          ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
+          ctx.fillStyle = active ? n.color : `${n.color}99`;
+          ctx.fill();
+          if (active) {
+            ctx.strokeStyle = "#fff";
+            ctx.lineWidth = 2;
+            ctx.stroke();
+          }
+
+          ctx.fillStyle = "#e8ecf4";
+          ctx.font = "11px Segoe UI, system-ui, sans-serif";
+          ctx.textAlign = "center";
+          const label = n.title.length > 22 ? n.title.slice(0, 20) + "…" : n.title;
+          ctx.fillText(label, n.x, n.y + n.r + 14);
+        }
+      }
+
+      function tick() {
+        if (atlas.nodes.length > 1) simulate();
+        draw();
+        atlas.animId = requestAnimationFrame(tick);
+      }
+
+      tick();
+
+      const onResize = () => {
+        if (state.mode === "atlas") {
+          initAtlas();
+        } else {
+          window.removeEventListener("resize", onResize);
+        }
+      };
+      window.addEventListener("resize", onResize);
+    }
+
+    loadData()
+      .then((data) => {
+        state.data = data;
+        render();
+      })
+      .catch((err) => {
+        document.getElementById("root").className = "error";
+        document.getElementById("root").textContent = err.message;
+      });
+  </script>
+</body>
+</html>

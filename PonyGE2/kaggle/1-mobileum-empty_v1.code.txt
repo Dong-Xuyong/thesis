@@ -1,0 +1,57 @@
+### 1-mobileum-empty_v1.ipynb  cells=8
+--- [0] code
+# This Python 3 environment comes with many helpful analytics libraries installed
+# It is defined by the kaggle/python Docker image: https://github.com/kaggle/docker-python
+# For example, here's several helpful packages to load
+
+import numpy as np # linear algebra
+import pandas as pd # data processing, CSV file I/O (e.g. pd.read_csv)
+
+# Input data files are available in the read-only "../input/" directory
+# For example, running this (by clicking run or pressing Shift+Enter) will list all files under the input directory
+
+import os
+for dirname, _, filenames in os.walk('/kaggle/input'):
+    for filename in filenames:
+        print(os.path.join(dirname, filename))
+
+# You can write up to 20GB to the current directory (/kaggle/working/) that gets preserved as output when you create a version using "Save & Run All" 
+# You can also write temporary files to /kaggle/temp/, but they won't be saved outside of the current session
+>>> /kaggle/input/mobileum-empty-agg/empty_combinations.csv
+>>> /kaggle/input/mobileum-empty-agg/not_empty_combinations.csv
+>>> 
+--- [1] code
+df = pd.read_csv("/kaggle/input/mobileum-empty-agg/empty_combinations.csv", sep=",")
+df1 = pd.read_csv("/kaggle/input/mobileum-empty-agg/not_empty_combinations.csv", sep=",")
+
+--- [2] code
+len(df)+len(df1)
+>>> 94080
+--- [3] code
+df.describe(include="all")
+>>>        Call Type   Event Type Subscriber Type Traffic Type Service Type  \
+>>> count      92525        92525           92525        92525        92525   
+>>> unique         2            4               5            3            2   
+>>> top          SMS  ROAMING OUT     Application       ON-NET      ROAMING   
+>>> 
+--- [4] code
+df1.describe(include="all")
+>>>        Call Type  Event Type Subscriber Type Traffic Type Service Type  \
+>>> count       1555        1555            1555         1555         1555   
+>>> unique         2           4               5            3            2   
+>>> top        VOICE  ORIGINATED       Roamer In          INT  NOT-ROAMING   
+>>> freq
+--- [5] code
+df1.head()
+>>>   Call Type  Event Type Subscriber Type Traffic Type Service Type  \
+>>> 0       SMS  ORIGINATED        Postpaid      OFF-NET  NOT-ROAMING   
+>>> 1       SMS  ORIGINATED        Postpaid          INT  NOT-ROAMING   
+>>> 2       SMS  ORIGINATED        Postpaid       ON-NET  NOT-ROAMING   
+>>> 3       SMS  ORIGINATED 
+--- [6] code
+df.head()
+>>>   Call Type  Event Type Subscriber Type Traffic Type Service Type  \
+>>> 0       SMS  ORIGINATED        Postpaid      OFF-NET  NOT-ROAMING   
+>>> 1       SMS  ORIGINATED        Postpaid      OFF-NET  NOT-ROAMING   
+>>> 2       SMS  ORIGINATED        Postpaid      OFF-NET  NOT-ROAMING   
+>>> 3       SMS  ORIGINATED 

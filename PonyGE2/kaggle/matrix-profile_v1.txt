@@ -1,0 +1,2133 @@
+cells 41
+--- [0] markdown
+<a class="anchor" id="0"></a>
+# **Mubileum Duration Generation with VAE**
+--- [1] markdown
+<a class="anchor" id="0.1"></a>
+# **Table of Contents**
+
+- 1. [Setup](#1)
+- 2. [Data Preparation](#2)
+<!--     - 2.1 [Data Preparation for LSTM](#2.1) -->
+- 3. [EDA](#3)
+- 4. [Anomaly Detection](#4)
+- 5. [Anomaly Creation](#5)
+- 6. [Genetic Algoritm Otimization](#6)
+
+--- [2] markdown
+# **1. SetUp** <a class="anchor" id="1"></a>
+
+[Table of Contents](#0.1)
+--- [3] code
+# Data Manipulation and Analysis
+import numpy as np
+import pandas as pd
+import random
+from tqdm import tqdm
+import os
+from scipy.stats import norm
+import stumpy
+
+#Visualization
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# Scikit-Learn for Machine Learning
+from sklearn.metrics import roc_auc_score, confusion_matrix, ConfusionMatrixDisplay
+
+
+import pickle
+from sklearn.metrics import precision_recall_curve
+
+
+# Read a CSV file into a Pandas DataFrame
+df = pd.read_csv("/kaggle/input/mobileum/df_anomaly.csv")
+--- [4] code
+filters = pd.read_csv("/kaggle/input/mobileum-empty-agg/not_empty_combinations.csv")
+--- [5] code
+filters
+>>>      Call Type   Event Type Subscriber Type Traffic Type Service Type  \
+>>> 0          SMS   ORIGINATED        Postpaid      OFF-NET  NOT-ROAMING   
+>>> 1          SMS   ORIGINATED        Postpaid          INT  NOT-ROAMING   
+>>> 2          SMS   ORIGINATED        Postpaid       ON-NET  NOT-ROAMING   
+>>> 3          SMS   ORIGINATED       Roamer In      OFF-NET  NOT-ROAMING   
+>>> 4          SMS   ORIGINATED       Roamer In      OFF-NET  NOT-ROAMING   
+>>> ...        ...          ...             ...          ...          ...   
+>>> 1550     VOICE  ROAMING OUT         Prepaid          INT      ROAMING   
+>>> 1551     VOICE  ROAMING OUT         Prepaid       ON-NET      ROAMING   
+>>> 1552     VOICE  ROAMING OUT           Other      OFF-NET      ROAMING   
+>>> 1553     VOICE  ROAMING OUT           Other          INT      ROAMING   
+>>> 1554     VOICE  ROAMING OUT           Other       ON-NET      ROAMING   
+>>> 
+>>>      Partner Description  Number of examples (rows)  
+>>> 0                 P_0001                       2110  
+>>> 1                 P_0001                       2110  
+>>> 2                 P_0001                       2110  
+>>> 3                 P_0043                          4  
+>>> 4                 P_0044                          7  
+>>> ...                  ...                        ...  
+>>> 1550              P_0001                        217  
+>>> 1551              P_0001                       2110  
+>>> 1552              P_0001                       2110  
+>>> 1553              P_0001                       2110  
+>>> 1554              P_0001     
+--- [6] code
+df
+>>>        Call Type    Event Type Subscriber Type Traffic Type Service Type  \
+>>> 0            SMS    ORIGINATED        Postpaid      OFF-NET  NOT-ROAMING   
+>>> 1          VOICE  CALL FORWARD     Application          INT  NOT-ROAMING   
+>>> 2          VOICE    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> 3          VOICE    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> 4          VOICE    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> ...          ...           ...             ...          ...          ...   
+>>> 958475       SMS    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> 958476       SMS    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> 958477       SMS    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> 958478       SMS    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> 958479       SMS    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> 
+>>>        Partner Description  #Events            TIMESTAMP  Anomaly  
+>>> 0                   P_0001      105  2022-07-18 00:00:00        0  
+>>> 1                   P_0001       16  2022-07-18 00:00:00        0  
+>>> 2                   P_0002        7  2022-07-18 00:00:00        0  
+>>> 3                   P_0003       15  2022-07-18 00:00:00        0  
+>>> 4                   P_0004        1  2022-07-18 00:00:00        0  
+>>> ...                    ...      ...                  ...      ...  
+>>> 958475              P_0280       30  2022-10-13 21:00:00        0  
+>>> 958476              P_0079      265  2022-1
+--- [7] markdown
+# **4. Anomaly Creation** <a class="anchor" id="4"></a>
+
+[Table of Contents](#0.1)
+--- [8] code
+def contain_condition(df, conditions):
+    if not conditions:
+        return False
+    pd_conditions = " & ".join([f'`{key}` == "{value}"' for key, value in conditions.items()])
+    return df.eval(pd_conditions).any()
+--- [9] code
+def filter_and_aggregate(df, filter_conditions, hierarchy=False):
+    """
+    Filters the DataFrame based on given conditions and aggregates by summing up a specified column.
+    
+    Args:
+    - df: The original DataFrame.
+    - filter_conditions: A dictionary where keys are column names and values are the values to filter on.
+    
+    Returns:
+    - A new DataFrame with the filtered and aggregated data.
+    """
+    # Apply the filter conditions
+    df_fil = df.copy()
+    
+    for col, val in filter_conditions.items():
+        df_fil = df_fil[df_fil[col] == val]
+    
+    # Drop the columns used for filtering
+    df_fil.drop(columns=list(filter_conditions.keys()), inplace=True)
+    
+    # Group by 'TIMESTAMP' and sum up the '#Events' column
+    if hierarchy:
+        df_agg = df_fil.groupby('TIMESTAMP')[['#Events','Anomaly']].sum().reset_index()
+    else:
+        df_agg = df_fil.groupby('TIMESTAMP')['#Events'].sum().reset_index()
+    
+    return df_agg
+
+--- [10] markdown
+1. get the anomaly_value and the ts with the function. 
+2. go to the original df get all the rows with the same ts (TIMESTAMP)
+3. from all the row calculate the sum of column (#Events)
+4. calculate the multiplier witch m = anomaly_value/ sum of column (#Events)
+5. use the multiplier to all rows of the #Events and do the round to get int
+6. Create an new columns witch name "Anomaly" with 0 or 1, which all row which has column 
+7. gerate an orignal and modified df
+--- [11] code
+
+--- [12] markdown
+The warning message you’ve encountered, "RuntimeWarning: divide by zero encountered in scalar divide," suggests that at some point in your code, there is a division operation where the divisor (sum_events) is zero.
+--- [13] markdown
+# 5. Hierarchical Structure
+--- [14] code
+df
+>>>        Call Type    Event Type Subscriber Type Traffic Type Service Type  \
+>>> 0            SMS    ORIGINATED        Postpaid      OFF-NET  NOT-ROAMING   
+>>> 1          VOICE  CALL FORWARD     Application          INT  NOT-ROAMING   
+>>> 2          VOICE    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> 3          VOICE    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> 4          VOICE    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> ...          ...           ...             ...          ...          ...   
+>>> 958475       SMS    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> 958476       SMS    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> 958477       SMS    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> 958478       SMS    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> 958479       SMS    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> 
+>>>        Partner Description  #Events            TIMESTAMP  Anomaly  
+>>> 0                   P_0001      105  2022-07-18 00:00:00        0  
+>>> 1                   P_0001       16  2022-07-18 00:00:00        0  
+>>> 2                   P_0002        7  2022-07-18 00:00:00        0  
+>>> 3                   P_0003       15  2022-07-18 00:00:00        0  
+>>> 4                   P_0004        1  2022-07-18 00:00:00        0  
+>>> ...                    ...      ...                  ...      ...  
+>>> 958475              P_0280       30  2022-10-13 21:00:00        0  
+>>> 958476              P_0079      265  2022-1
+--- [15] code
+available_categories = {
+    'Call Type': df['Call Type'].unique().tolist(),
+    'Event Type': df['Event Type'].unique().tolist(),
+    'Subscriber Type': df['Subscriber Type'].unique().tolist(),
+    'Traffic Type': df['Traffic Type'].unique().tolist(),
+    'Service Type': df['Service Type'].unique().tolist(),
+    'Partner Description': df['Partner Description'].unique().tolist(),
+    'STOP': False
+}
+--- [16] code
+def revert_key_value_mapping(available_categories):
+    reversed_mapping = {}
+    for key, values in available_categories.items():
+        if isinstance(values, list):  # Ensure the value is iterable
+            for value in values:
+                if value not in reversed_mapping:
+                    reversed_mapping[value] = []
+                reversed_mapping[value].append(key)
+        else:
+            # Handle non-list values (like the 'STOP' flag)
+            value = values
+            if value not in reversed_mapping:
+                reversed_mapping[value] = []
+            reversed_mapping[value].append(key)
+    return reversed_mapping
+--- [17] code
+def create_hierarchy(available_categories):
+
+    hierarchy = {}
+    current_column = random.choice(list(available_categories.keys()))
+    values = available_categories.get(current_column)
+    
+    if values:
+        for value in values:
+            key=value
+            new_categories = available_categories.copy()
+            new_categories.pop(current_column)
+            hierarchy[key] = create_hierarchy(new_categories)
+            
+    return hierarchy
+--- [18] code
+def flatten_dict_structure(d, rt_available_categories, parent_path=[]):
+    items = []
+    for k, v in d.items():
+        # Determine the category list for the current key from the mapping
+        categories = rt_available_categories.get(k)
+        
+        # Iterate through categories (there could be more than one, but typically one for this use case)
+        for category in categories:
+            current_path = parent_path + [(category, k)]
+            
+            if isinstance(v, dict) and v:  # If v is a non-empty dictionary, continue recursion
+                items.extend(flatten_dict_structure(v, rt_available_categories, current_path))
+            elif not v:  # If the dictionary is empty, construct the entry from the path
+                entry = {cat: val for cat, val in current_path}
+                items.append(entry)
+    return items
+--- [19] code
+    # Define start and end timestamps
+    start = '2022-07-18 00:00:00'
+    end = '2022-10-13 21:00:00'
+    
+    # Generate the timestamp range at 1-hour intervals
+    timestamp_range = pd.date_range(start=start, end=end, freq='h')
+    
+    # Create the DataFrame
+    df_default = pd.DataFrame({
+        'TIMESTAMP': timestamp_range,
+        '#Events': 0,
+        'Anomaly': 0
+    })
+--- [20] code
+df
+>>>        Call Type    Event Type Subscriber Type Traffic Type Service Type  \
+>>> 0            SMS    ORIGINATED        Postpaid      OFF-NET  NOT-ROAMING   
+>>> 1          VOICE  CALL FORWARD     Application          INT  NOT-ROAMING   
+>>> 2          VOICE    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> 3          VOICE    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> 4          VOICE    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> ...          ...           ...             ...          ...          ...   
+>>> 958475       SMS    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> 958476       SMS    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> 958477       SMS    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> 958478       SMS    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> 958479       SMS    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> 
+>>>        Partner Description  #Events            TIMESTAMP  Anomaly  
+>>> 0                   P_0001      105  2022-07-18 00:00:00        0  
+>>> 1                   P_0001       16  2022-07-18 00:00:00        0  
+>>> 2                   P_0002        7  2022-07-18 00:00:00        0  
+>>> 3                   P_0003       15  2022-07-18 00:00:00        0  
+>>> 4                   P_0004        1  2022-07-18 00:00:00        0  
+>>> ...                    ...      ...                  ...      ...  
+>>> 958475              P_0280       30  2022-10-13 21:00:00        0  
+>>> 958476              P_0079      265  2022-1
+--- [21] code
+df_default
+
+>>>                TIMESTAMP  #Events  Anomaly
+>>> 0    2022-07-18 00:00:00        0        0
+>>> 1    2022-07-18 01:00:00        0        0
+>>> 2    2022-07-18 02:00:00        0        0
+>>> 3    2022-07-18 03:00:00        0        0
+>>> 4    2022-07-18 04:00:00        0        0
+>>> ...                  ...      ...      ...
+>>> 2105 2022-10-13 17:00:00        0        0
+>>> 2106 2022-10-13 18:00:00        0        0
+>>> 2107 2022-10-13 19:00:00        0        0
+>>> 2108 2022-10-13 20:00:00        0        0
+>>> 2109 2022-10-13 21:00:00        0        0
+>>> 
+>>> [2110 rows x 3 columns]
+--- [22] code
+df["TIMESTAMP"] = pd.to_datetime(df['TIMESTAMP'])
+--- [23] code
+df["TIMESTAMP"].dtype
+>>> dtype('<M8[ns]')
+--- [24] code
+def set_leaf(df):
+    df['Anomaly'] = df['Anomaly'].apply(lambda x: 1 if x > 0 else x)
+    
+    # Define start and end timestamps
+    start = '2022-07-18 00:00:00'
+    end = '2022-10-13 21:00:00'
+    
+    # Generate the timestamp range at 1-hour intervals
+    timestamp_range = pd.date_range(start=start, end=end, freq='h')
+    
+    # Create the DataFrame
+    df_default = pd.DataFrame({
+        'TIMESTAMP': timestamp_range,
+        '#Events': 0,
+        'Anomaly': 0
+    })
+    print(df["TIMESTAMP"].dtype)
+    print(df_default["TIMESTAMP"].dtype)
+    
+#     df_default.loc[df_default["TIMESTAMP"] == df["TIMESTAMP"], df.columns[1:]] = df.iloc[:, 1:].values
+    # Merge original DataFrame with the default DataFrame based on 'TIMESTAMP'
+    df_default = pd.merge(df_default, df, on='TIMESTAMP', how='left', suffixes=('', '_y'))
+    
+    # Overwrite columns with values from df if available
+    for column in df.columns[1:]:  # assuming 'TIMESTAMP' is at index 0
+        df_default[column] = df_default[column + '_y'].combine_first(df_default[column])
+    
+    # Drop helper columns
+    df_default.drop(columns=[col for col in df_default.columns if '_y' in col], inplace=True)
+    
+    return df_default
+
+--- [25] code
+def rm_empty_agg(df, ft_hierarchy):
+    items = []
+    # Wrap ft_hierarchy with tqdm for a progress bar
+    print("Removing the empty aggregations from the hierarchy!")
+    for conditions in tqdm(ft_hierarchy, desc='Processing conditions'):
+        if contain_condition(filters, conditions):
+            items.append(conditions)
+    return items
+--- [26] code
+def create_final_hierarchy(df, rm_ft_hierarchy):
+    aggregated_df = {}
+    
+    # Wrap the enumeration with tqdm for better progress visibility
+    for i, conditions in tqdm(enumerate(rm_ft_hierarchy, start=1), total=len(rm_ft_hierarchy), desc="Processing conditions"):
+        agg_df = filter_and_aggregate(df, conditions, hierarchy=True)
+
+        if not agg_df.empty:
+            agg_df = set_leaf(agg_df)
+
+        aggregated_df[f'leaf_{i}'] = agg_df
+
+    return aggregated_df
+--- [27] code
+def calculate_AUC(df, m=168):
+    df_aux = df.copy()
+    ts =df_aux["#Events"].to_numpy().astype(float)
+    matrix_profile = stumpy.stump(ts, m=m)
+    mp_values = matrix_profile[:, 0] # A primeira coluna contém os valores do Matrix Profile
+    
+    scaler = MinMaxScaler() 
+    # Normalizar os valores do Matrix Profile para [0, 1] (1 = maior probabilidade de anomalia)
+    mp_values_normalized = scaler.fit_transform(mp_values.reshape(-1, 1)).flatten()
+
+    y_pred_prob = mp_values_normalized
+
+ 
+    y_true = df["Anomaly"][m-1:].to_numpy().astype(float)
+    print(y_pred_prob.size, y_true.size)
+    
+    
+    return auc
+--- [28] code
+def calculate_AUC_hierarchy(aggregated_df):
+    auc_scores = {}
+
+    # Using tqdm to show progress. Wrap the .items() of the dictionary with tqdm.
+    for leaf_name, df_leaf in tqdm(aggregated_df.items(), desc="Calculating AUCs"):
+        if df_leaf["Anomaly"].sum() > 0:
+
+
+            auc_score = calculate_AUC(df_leaf)
+            auc_scores[leaf_name] = auc_score
+
+    # Calculate the mean AUC score across all DataFrames
+    auc_score_mean = sum(auc_scores.values()) / len(auc_scores) if auc_scores else 0
+
+    return auc_score_mean
+--- [29] code
+def pipeline_hierarchy(df, n_hierarchies, available_categories):
+    group_hierarchies = []
+    auc_hierarchies = []
+    rt_available_categories = revert_key_value_mapping(available_categories)
+    for _ in range(n_hierarchies):
+        hierarchy = create_hierarchy(available_categories)
+        ft_hierarchy = flatten_dict_structure(hierarchy, rt_available_categories)
+        rm_ft_hierarchy = rm_empty_agg(df, ft_hierarchy)
+        aggregated_df = create_final_hierarchy(df, rm_ft_hierarchy)
+        auc_hierarchy = calculate_AUC_hierarchy(aggregated_df)
+        group_hierarchies.append(aggregated_df)
+        auc_hierarchies.append(auc_hierarchy)
+        
+    return group_hierarchies, auc_hierarchies
+--- [30] code
+group_hierarchies, auc_hierarchies = pipeline_hierarchy(df, 2, available_categories)
+>>> Removing the empty aggregations from the hierarchy!
+>>> 
+>>> Processing conditions: 100%|██████████| 28091/28091 [03:41<00:00, 126.83it/s]
+>>> Processing conditions:   0%|          | 1/402 [00:00<05:02,  1.32it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   0%|          | 2/402 [00:01<05:03,  1.32it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   1%|          | 3/402 [00:02<04:56,  1.35it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   1%|          | 4/402 [00:02<04:52,  1.36it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   1%|          | 5/402 [00:03<04:58,  1.33it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   1%|▏         | 6/402 [00:04<04:53,  1.35it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   2%|▏         | 7/402 [00:05<05:06,  1.29it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   2%|▏         | 8/402 [00:06<05:19,  1.23it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   2%|▏         | 9/402 [00:07<05:29,  1.19it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   2%|▏         | 10/402 [00:07<05:35,  1.17it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   3%|▎         | 11/402 [00:08<05:42,  1.14it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   3%|▎         | 12/402 [00:09<05:42,  1.14it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   3%|▎         | 13/402 [00:10<05:46,  1.12it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   3%|▎         | 14/402 [00:11<05:49,  1.11it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   4%|▎         | 15/402 [00:12<05:51,  1.10it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   4%|▍         | 16/402 [00:13<05:56,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   4%|▍         | 17/402 [00:14<05:58,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   4%|▍         | 18/402 [00:15<05:50,  1.09it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   5%|▍         | 19/402 [00:16<05:44,  1.11it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   5%|▍         | 20/402 [00:17<05:40,  1.12it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   5%|▌         | 21/402 [00:18<05:42,  1.11it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   5%|▌         | 22/402 [00:18<05:40,  1.12it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   6%|▌         | 23/402 [00:19<05:40,  1.11it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   6%|▌         | 24/402 [00:20<05:43,  1.10it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   6%|▌         | 25/402 [00:21<05:45,  1.09it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   6%|▋         | 26/402 [00:22<05:43,  1.10it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   7%|▋         | 27/402 [00:23<05:39,  1.10it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   7%|▋         | 28/402 [00:24<05:43,  1.09it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   7%|▋         | 29/402 [00:25<05:39,  1.10it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   7%|▋         | 30/402 [00:26<05:40,  1.09it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   8%|▊         | 31/402 [00:27<05:41,  1.09it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   8%|▊         | 32/402 [00:28<05:40,  1.09it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   8%|▊         | 33/402 [00:29<05:40,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   8%|▊         | 34/402 [00:29<05:40,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   9%|▊         | 35/402 [00:30<05:38,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   9%|▉         | 36/402 [00:31<05:38,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   9%|▉         | 37/402 [00:32<05:37,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   9%|▉         | 38/402 [00:33<05:37,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  10%|▉         | 39/402 [00:34<05:37,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  10%|▉         | 40/402 [00:35<05:36,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  10%|█         | 41/402 [00:36<05:35,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  10%|█         | 42/402 [00:37<05:30,  1.09it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  11%|█         | 43/402 [00:38<05:27,  1.09it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  11%|█         | 44/402 [00:39<05:28,  1.09it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  11%|█         | 45/402 [00:40<05:29,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  11%|█▏        | 46/402 [00:41<05:29,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  12%|█▏        | 47/402 [00:41<05:27,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  12%|█▏        | 48/402 [00:42<05:22,  1.10it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  12%|█▏        | 49/402 [00:43<05:26,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  12%|█▏        | 50/402 [00:44<05:28,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  13%|█▎        | 51/402 [00:45<05:28,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  13%|█▎        | 52/402 [00:46<05:26,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  13%|█▎        | 53/402 [00:47<05:21,  1.09it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  13%|█▎        | 54/402 [00:48<05:16,  1.10it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  14%|█▎        | 55/402 [00:49<05:15,  1.10it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  14%|█▍        | 56/402 [00:50<05:17,  1.09it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  14%|█▍        | 57/402 [00:51<05:18,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  14%|█▍        | 58/402 [00:52<05:17,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  15%|█▍        | 59/402 [00:52<05:12,  1.10it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  15%|█▍        | 60/402 [00:53<05:10,  1.10it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  15%|█▌        | 61/402 [00:54<05:11,  1.09it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  15%|█▌        | 62/402 [00:55<05:14,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  16%|█▌        | 63/402 [00:56<05:14,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  16%|█▌        | 64/402 [00:57<05:14,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  16%|█▌        | 65/402 [00:58<05:11,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  16%|█▋        | 66/402 [00:59<05:05,  1.10it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  17%|█▋        | 67/402 [01:00<05:01,  1.11it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  17%|█▋        | 68/402 [01:01<04:59,  1.12it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  17%|█▋        | 69/402 [01:02<05:01,  1.10it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  17%|█▋        | 70/402 [01:02<04:58,  1.11it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  18%|█▊        | 71/402 [01:03<05:02,  1.10it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  18%|█▊        | 72/402 [01:04<05:02,  1.09it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  18%|█▊        | 73/402 [01:05<05:01,  1.09it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  18%|█▊        | 74/402 [01:06<04:58,  1.10it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  19%|█▊        | 75/402 [01:07<05:00,  1.09it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  19%|█▉        | 76/402 [01:08<04:59,  1.09it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  19%|█▉        | 77/402 [01:09<04:55,  1.10it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  19%|█▉        | 78/402 [01:10<04:52,  1.11it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  20%|█▉        | 79/402 [01:11<04:50,  1.11it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  20%|█▉        | 80/402 [01:12<04:51,  1.11it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  20%|██        | 81/402 [01:13<04:50,  1.10it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  20%|██        | 82/402 [01:13<04:49,  1.11it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  21%|██        | 83/402 [01:14<04:47,  1.11it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  21%|██        | 84/402 [01:15<04:44,  1.12it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  21%|██        | 85/402 [01:16<04:45,  1.11it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  21%|██▏       | 86/402 [01:17<04:42,  1.12it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  22%|██▏       | 87/402 [01:18<04:39,  1.13it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  22%|██▏       | 88/402 [01:19<04:37,  1.13it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  22%|██▏       | 89/402 [01:20<04:36,  1.13it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  22%|██▏       | 90/402 [01:21<04:37,  1.12it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  23%|██▎       | 91/402 [01:21<04:39,  1.11it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  23%|██▎       | 92/402 [01:22<04:36,  1.12it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  23%|██▎       | 93/402 [01:23<04:35,  1.12it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  23%|██▎       | 94/402 [01:24<04:33,  1.13it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  24%|██▎       | 95/402 [01:25<04:35,  1.11it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  24%|██▍       | 96/402 [01:26<04:37,  1.10it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  24%|██▍       | 97/402 [01:27<04:38,  1.10it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  24%|██▍       | 98/402 [01:28<04:38,  1.09it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  25%|██▍       | 99/402 [01:29<04:37,  1.09it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  25%|██▍       | 100/402 [01:30<04:34,  1.10it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  25%|██▌       | 101/402 [01:31<04:35,  1.09it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  25%|██▌       | 102/402 [01:31<04:36,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  26%|██▌       | 103/402 [01:32<04:31,  1.10it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  26%|██▌       | 104/402 [01:33<04:33,  1.09it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  26%|██▌       | 105/402 [01:34<04:31,  1.10it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  26%|██▋       | 106/402 [01:35<04:29,  1.10it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  27%|██▋       | 107/402 [01:36<04:28,  1.10it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  27%|██▋       | 108/402 [01:37<04:24,  1.11it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  27%|██▋       | 109/402 [01:38<04:22,  1.12it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  27%|██▋       | 110/402 [01:39<04:24,  1.10it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  28%|██▊       | 111/402 [01:40<04:21,  1.11it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  28%|██▊       | 112/402 [01:40<04:23,  1.10it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  28%|██▊       | 113/402 [01:41<04:21,  1.10it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  28%|██▊       | 114/402 [01:42<04:18,  1.12it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  29%|██▊       | 115/402 [01:43<04:15,  1.12it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  29%|██▉       | 116/402 [01:44<04:18,  1.11it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  29%|██▉       | 117/402 [01:45<04:19,  1.10it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  29%|██▉       | 118/402 [01:46<04:19,  1.09it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  30%|██▉       | 119/402 [01:47<04:15,  1.11it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  30%|██▉       | 120/402 [01:48<04:19,  1.09it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  30%|███       | 121/402 [01:49<04:20,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  30%|███       | 122/402 [01:50<04:16,  1.09it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  31%|███       | 123/402 [01:50<04:12,  1.10it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  31%|███       | 124/402 [01:51<04:09,  1.12it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  31%|███       | 125/402 [01:52<04:06,  1.12it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  31%|███▏      | 126/402 [01:53<04:06,  1.12it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  32%|███▏      | 127/402 [01:54<04:10,  1.10it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  32%|███▏      | 128/402 [01:55<04:11,  1.09it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  32%|███▏      | 129/402 [01:56<04:11,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  32%|███▏      | 130/402 [01:57<04:11,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  33%|███▎      | 131/402 [01:58<04:11,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  33%|███▎      | 132/402 [01:59<04:11,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  33%|███▎      | 133/402 [02:00<04:10,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  33%|███▎      | 134/402 [02:01<04:08,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  34%|███▎      | 135/402 [02:02<04:08,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  34%|███▍      | 136/402 [02:02<04:07,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  34%|███▍      | 137/402 [02:03<04:09,  1.06it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  34%|███▍      | 138/402 [02:04<04:07,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  35%|███▍      | 139/402 [02:05<04:02,  1.09it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  35%|███▍      | 140/402 [02:06<04:02,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  35%|███▌      | 141/402 [02:07<04:01,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  35%|███▌      | 142/402 [02:08<04:01,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  36%|███▌      | 143/402 [02:09<04:01,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  36%|███▌      | 144/402 [02:10<04:01,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  36%|███▌      | 145/402 [02:11<03:58,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  36%|███▋      | 146/402 [02:12<03:55,  1.09it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  37%|███▋      | 147/402 [02:13<03:54,  1.09it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  37%|███▋      | 148/402 [02:14<03:51,  1.10it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  37%|███▋      | 149/402 [02:14<03:48,  1.10it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  37%|███▋      | 150/402 [02:15<03:49,  1.10it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  38%|███▊      | 151/402 [02:16<03:48,  1.10it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  38%|███▊      | 152/402 [02:17<03:45,  1.11it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  38%|███▊      | 153/402 [02:18<03:43,  1.11it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  38%|███▊      | 154/402 [02:19<03:44,  1.10it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  39%|███▊      | 155/402 [02:20<03:46,  1.09it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  39%|███▉      | 156/402 [02:21<03:46,  1.09it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  39%|███▉      | 157/402 [02:22<03:43,  1.10it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  39%|███▉      | 158/402 [02:23<03:40,  1.11it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  40%|███▉      | 159/402 [02:24<03:43,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  40%|███▉      | 160/402 [02:25<03:44,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  40%|████      | 161/402 [02:25<03:44,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  40%|████      | 162/402 [02:26<03:43,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  41%|████      | 163/402 [02:27<03:43,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  41%|████      | 164/402 [02:28<03:43,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  41%|████      | 165/402 [02:29<03:42,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  41%|████▏     | 166/402 [02:30<03:41,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  42%|████▏     | 167/402 [02:31<03:40,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  42%|████▏     | 168/402 [02:32<03:39,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  42%|████▏     | 169/402 [02:33<03:38,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  42%|████▏     | 170/402 [02:34<03:39,  1.06it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  43%|████▎     | 171/402 [02:35<03:37,  1.06it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  43%|████▎     | 172/402 [02:36<03:36,  1.06it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  43%|████▎     | 173/402 [02:37<03:35,  1.06it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  43%|████▎     | 174/402 [02:38<03:34,  1.06it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  44%|████▎     | 175/402 [02:39<03:33,  1.06it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  44%|████▍     | 176/402 [02:40<03:32,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  44%|████▍     | 177/402 [02:41<03:31,  1.06it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  44%|████▍     | 178/402 [02:41<03:30,  1.06it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  45%|████▍     | 179/402 [02:42<03:29,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  45%|████▍     | 180/402 [02:43<03:29,  1.06it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  45%|████▌     | 181/402 [02:44<03:27,  1.06it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  45%|████▌     | 182/402 [02:45<03:26,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  46%|████▌     | 183/402 [02:46<03:24,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  46%|████▌     | 184/402 [02:47<03:23,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  46%|████▌     | 185/402 [02:48<03:22,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  46%|████▋     | 186/402 [02:49<03:21,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  47%|████▋     | 187/402 [02:50<03:18,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  47%|████▋     | 188/402 [02:51<03:18,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  47%|████▋     | 189/402 [02:52<03:18,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  47%|████▋     | 190/402 [02:53<03:16,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  48%|████▊     | 191/402 [02:54<03:16,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  48%|████▊     | 192/402 [02:54<03:12,  1.09it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  48%|████▊     | 193/402 [02:55<03:12,  1.09it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  48%|████▊     | 194/402 [02:56<03:12,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  49%|████▊     | 195/402 [02:57<03:11,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  49%|████▉     | 196/402 [02:58<03:10,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  49%|████▉     | 197/402 [02:59<03:09,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  49%|████▉     | 198/402 [03:00<03:08,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  50%|████▉     | 199/402 [03:01<03:07,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  50%|████▉     | 200/402 [03:02<03:07,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  50%|█████     | 201/402 [03:03<03:06,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  50%|█████     | 202/402 [03:04<03:06,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  50%|█████     | 203/402 [03:05<03:05,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  51%|█████     | 204/402 [03:06<03:04,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  51%|█████     | 205/402 [03:07<03:03,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  51%|█████     | 206/402 [03:07<03:02,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  51%|█████▏    | 207/402 [03:08<02:59,  1.09it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  52%|█████▏    | 208/402 [03:09<02:57,  1.09it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  52%|█████▏    | 209/402 [03:10<02:57,  1.09it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  52%|█████▏    | 210/402 [03:11<02:57,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  52%|█████▏    | 211/402 [03:12<02:57,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  53%|█████▎    | 212/402 [03:13<02:56,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  53%|█████▎    | 213/402 [03:14<02:56,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  53%|█████▎    | 214/402 [03:15<02:55,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  53%|█████▎    | 215/402 [03:16<02:54,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  54%|█████▎    | 216/402 [03:17<02:52,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  54%|█████▍    | 217/402 [03:18<02:49,  1.09it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  54%|█████▍    | 218/402 [03:19<02:48,  1.09it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  54%|█████▍    | 219/402 [03:19<02:47,  1.09it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  55%|█████▍    | 220/402 [03:20<02:47,  1.09it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  55%|█████▍    | 221/402 [03:21<02:47,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  55%|█████▌    | 222/402 [03:22<02:47,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  55%|█████▌    | 223/402 [03:23<02:45,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  56%|█████▌    | 224/402 [03:24<02:43,  1.09it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  56%|█████▌    | 225/402 [03:25<02:43,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  56%|█████▌    | 226/402 [03:26<02:42,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  56%|█████▋    | 227/402 [03:27<02:42,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  57%|█████▋    | 228/402 [03:28<02:41,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  57%|█████▋    | 229/402 [03:29<02:40,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  57%|█████▋    | 230/402 [03:30<02:39,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  57%|█████▋    | 231/402 [03:31<02:38,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  58%|█████▊    | 232/402 [03:32<02:38,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  58%|█████▊    | 233/402 [03:32<02:37,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  58%|█████▊    | 234/402 [03:33<02:37,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  58%|█████▊    | 235/402 [03:34<02:36,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  59%|█████▊    | 236/402 [03:35<02:32,  1.09it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  59%|█████▉    | 237/402 [03:36<02:31,  1.09it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  59%|█████▉    | 238/402 [03:37<02:31,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  59%|█████▉    | 239/402 [03:38<02:30,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  60%|█████▉    | 240/402 [03:39<02:29,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  60%|█████▉    | 241/402 [03:40<02:29,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  60%|██████    | 242/402 [03:41<02:29,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  60%|██████    | 243/402 [03:42<02:27,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  61%|██████    | 244/402 [03:43<02:26,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  61%|██████    | 245/402 [03:44<02:24,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  61%|██████    | 246/402 [03:44<02:24,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  61%|██████▏   | 247/402 [03:45<02:21,  1.10it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  62%|██████▏   | 248/402 [03:46<02:20,  1.10it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  62%|██████▏   | 249/402 [03:47<02:20,  1.09it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  62%|██████▏   | 250/402 [03:48<02:19,  1.09it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  62%|██████▏   | 251/402 [03:49<02:19,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  63%|██████▎   | 252/402 [03:50<02:18,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  63%|██████▎   | 253/402 [03:51<02:17,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  63%|██████▎   | 254/402 [03:52<02:14,  1.10it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  63%|██████▎   | 255/402 [03:53<02:12,  1.11it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  64%|██████▎   | 256/402 [03:54<02:16,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  64%|██████▍   | 257/402 [03:55<02:18,  1.05it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  64%|██████▍   | 258/402 [03:56<02:16,  1.06it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  64%|██████▍   | 259/402 [03:57<02:14,  1.06it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  65%|██████▍   | 260/402 [03:57<02:13,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  65%|██████▍   | 261/402 [03:58<02:11,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  65%|██████▌   | 262/402 [03:59<02:10,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  65%|██████▌   | 263/402 [04:00<02:09,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  66%|██████▌   | 264/402 [04:01<02:08,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  66%|██████▌   | 265/402 [04:02<02:08,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  66%|██████▌   | 266/402 [04:03<02:06,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  66%|██████▋   | 267/402 [04:04<02:07,  1.06it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  67%|██████▋   | 268/402 [04:05<02:06,  1.06it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  67%|██████▋   | 269/402 [04:06<02:05,  1.06it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  67%|██████▋   | 270/402 [04:07<02:04,  1.06it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  67%|██████▋   | 271/402 [04:08<02:02,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  68%|██████▊   | 272/402 [04:09<02:02,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  68%|██████▊   | 273/402 [04:10<02:00,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  68%|██████▊   | 274/402 [04:11<02:00,  1.06it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  68%|██████▊   | 275/402 [04:12<01:59,  1.06it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  69%|██████▊   | 276/402 [04:12<01:58,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  69%|██████▉   | 277/402 [04:13<01:58,  1.06it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  69%|██████▉   | 278/402 [04:14<01:56,  1.06it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  69%|██████▉   | 279/402 [04:15<01:53,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  70%|██████▉   | 280/402 [04:16<01:53,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  70%|██████▉   | 281/402 [04:17<01:52,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  70%|███████   | 282/402 [04:18<01:51,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  70%|███████   | 283/402 [04:19<01:50,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  71%|███████   | 284/402 [04:20<01:49,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  71%|███████   | 285/402 [04:21<01:48,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  71%|███████   | 286/402 [04:22<01:47,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  71%|███████▏  | 287/402 [04:23<01:47,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  72%|███████▏  | 288/402 [04:24<01:47,  1.06it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  72%|███████▏  | 289/402 [04:25<01:46,  1.06it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  72%|███████▏  | 290/402 [04:26<01:46,  1.05it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  72%|███████▏  | 291/402 [04:27<01:45,  1.06it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  73%|███████▎  | 292/402 [04:27<01:43,  1.06it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  73%|███████▎  | 293/402 [04:28<01:42,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  73%|███████▎  | 294/402 [04:29<01:40,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  73%|███████▎  | 295/402 [04:30<01:40,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  74%|███████▎  | 296/402 [04:31<01:38,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  74%|███████▍  | 297/402 [04:32<01:36,  1.09it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  74%|███████▍  | 298/402 [04:33<01:36,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  74%|███████▍  | 299/402 [04:34<01:36,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  75%|███████▍  | 300/402 [04:35<01:35,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  75%|███████▍  | 301/402 [04:36<01:34,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  75%|███████▌  | 302/402 [04:37<01:32,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  75%|███████▌  | 303/402 [04:38<01:31,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  76%|███████▌  | 304/402 [04:39<01:31,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  76%|███████▌  | 305/402 [04:40<01:30,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  76%|███████▌  | 306/402 [04:40<01:29,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  76%|███████▋  | 307/402 [04:41<01:28,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  77%|███████▋  | 308/402 [04:42<01:28,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  77%|███████▋  | 309/402 [04:43<01:27,  1.06it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  77%|███████▋  | 310/402 [04:44<01:26,  1.06it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  77%|███████▋  | 311/402 [04:45<01:24,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  78%|███████▊  | 312/402 [04:46<01:24,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  78%|███████▊  | 313/402 [04:47<01:23,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  78%|███████▊  | 314/402 [04:48<01:22,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  78%|███████▊  | 315/402 [04:49<01:20,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  79%|███████▊  | 316/402 [04:50<01:19,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  79%|███████▉  | 317/402 [04:51<01:19,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  79%|███████▉  | 318/402 [04:52<01:18,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  79%|███████▉  | 319/402 [04:53<01:17,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  80%|███████▉  | 320/402 [04:54<01:16,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  80%|███████▉  | 321/402 [04:54<01:15,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  80%|████████  | 322/402 [04:55<01:14,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  80%|████████  | 323/402 [04:56<01:13,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  81%|████████  | 324/402 [04:57<01:12,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  81%|████████  | 325/402 [04:58<01:12,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  81%|████████  | 326/402 [04:59<01:11,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  81%|████████▏ | 327/402 [05:00<01:10,  1.06it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  82%|████████▏ | 328/402 [05:01<01:10,  1.06it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  82%|████████▏ | 329/402 [05:02<01:08,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  82%|████████▏ | 330/402 [05:03<01:06,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  82%|████████▏ | 331/402 [05:04<01:06,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  83%|████████▎ | 332/402 [05:05<01:04,  1.09it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  83%|████████▎ | 333/402 [05:06<01:02,  1.10it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  83%|████████▎ | 334/402 [05:07<01:02,  1.09it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  83%|████████▎ | 335/402 [05:07<01:01,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  84%|████████▎ | 336/402 [05:08<01:01,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  84%|████████▍ | 337/402 [05:09<00:59,  1.09it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  84%|████████▍ | 338/402 [05:10<00:58,  1.09it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  84%|████████▍ | 339/402 [05:11<00:58,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  85%|████████▍ | 340/402 [05:12<00:57,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  85%|████████▍ | 341/402 [05:13<00:56,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  85%|████████▌ | 342/402 [05:14<00:56,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  85%|████████▌ | 343/402 [05:15<00:55,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  86%|████████▌ | 344/402 [05:16<00:54,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  86%|████████▌ | 345/402 [05:17<00:53,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  86%|████████▌ | 346/402 [05:18<00:51,  1.09it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  86%|████████▋ | 347/402 [05:19<00:50,  1.09it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  87%|████████▋ | 348/402 [05:19<00:49,  1.09it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  87%|████████▋ | 349/402 [05:20<00:48,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  87%|████████▋ | 350/402 [05:21<00:48,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  87%|████████▋ | 351/402 [05:22<00:47,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  88%|████████▊ | 352/402 [05:23<00:46,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  88%|████████▊ | 353/402 [05:24<00:45,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  88%|████████▊ | 354/402 [05:25<00:44,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  88%|████████▊ | 355/402 [05:26<00:44,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  89%|████████▊ | 356/402 [05:27<00:43,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  89%|████████▉ | 357/402 [05:28<00:41,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  89%|████████▉ | 358/402 [05:29<00:41,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  89%|████████▉ | 359/402 [05:30<00:40,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  90%|████████▉ | 360/402 [05:31<00:39,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  90%|████████▉ | 361/402 [05:32<00:38,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  90%|█████████ | 362/402 [05:33<00:37,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  90%|█████████ | 363/402 [05:34<00:36,  1.06it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  91%|█████████ | 364/402 [05:34<00:35,  1.06it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  91%|█████████ | 365/402 [05:35<00:34,  1.06it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  91%|█████████ | 366/402 [05:36<00:33,  1.06it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  91%|█████████▏| 367/402 [05:37<00:32,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  92%|█████████▏| 368/402 [05:38<00:31,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  92%|█████████▏| 369/402 [05:39<00:30,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  92%|█████████▏| 370/402 [05:40<00:29,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  92%|█████████▏| 371/402 [05:41<00:28,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  93%|█████████▎| 372/402 [05:42<00:27,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  93%|█████████▎| 373/402 [05:43<00:26,  1.08it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  93%|█████████▎| 374/402 [05:44<00:26,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  93%|█████████▎| 375/402 [05:45<00:25,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  94%|█████████▎| 376/402 [05:46<00:24,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  94%|█████████▍| 377/402 [05:47<00:23,  1.07it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  94%|█████████▍| 378/402 [05:47<00:21,  1.13it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  94%|█████████▍| 379/402 [05:48<00:19,  1.18it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  95%|█████████▍| 380/402 [05:49<00:18,  1.22it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  95%|█████████▍| 381/402 [05:50<00:16,  1.25it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  95%|█████████▌| 382/402 [05:50<00:15,  1.26it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  95%|█████████▌| 383/402 [05:51<00:14,  1.29it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  96%|█████████▌| 384/402 [05:52<00:13,  1.32it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  96%|█████████▌| 385/402 [05:53<00:12,  1.34it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  96%|█████████▌| 386/402 [05:53<00:12,  1.32it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  96%|█████████▋| 387/402 [05:54<00:11,  1.32it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  97%|█████████▋| 388/402 [05:55<00:10,  1.32it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  97%|█████████▋| 389/402 [05:56<00:09,  1.37it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  97%|█████████▋| 390/402 [05:56<00:08,  1.41it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  97%|█████████▋| 391/402 [05:57<00:07,  1.44it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  98%|█████████▊| 392/402 [05:58<00:06,  1.45it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  98%|█████████▊| 393/402 [05:58<00:06,  1.47it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  98%|█████████▊| 394/402 [05:59<00:05,  1.48it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  98%|█████████▊| 395/402 [06:00<00:04,  1.49it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  99%|█████████▊| 396/402 [06:00<00:04,  1.40it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  99%|█████████▉| 397/402 [06:01<00:02,  1.68it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  99%|█████████▉| 398/402 [06:01<00:02,  1.95it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  99%|█████████▉| 399/402 [06:01<00:01,  2.21it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions: 100%|█████████▉| 400/402 [06:02<00:00,  2.44it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions: 100%|█████████▉| 401/402 [06:02<00:00,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions: 100%|██████████| 402/402 [06:02<00:00,  1.11it/s]
+>>> 
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Calculating AUCs:   0%|          | 0/402 [00:36<?, ?it/s]
+>>> 
+--- [31] code
+auc_hierarchies
+--- [32] code
+index = auc_hierarchies.index(max(auc_hierarchies))
+best_result = group_hierarchies[index]
+--- [33] code
+# Save to a pickle file
+with open('dataframes_dict.pkl', 'wb') as handle:
+    pickle.dump(best_result, handle, protocol=pickle.HIGHEST_PROTOCOL)
+--- [34] code
+# Load from a pickle file
+# with open('dataframes_dict.pkl', 'rb') as handle:
+#     loaded_dataframes_dict = pickle.load(handle)
+
+--- [35] markdown
+# **5. Anomaly Detetion** <a class="anchor" id="5"></a>
+
+[Table of Contents](#0.1)
+
+1. label das anomalias
+2. hierarquia fixa, calcular Matrix P
+3. Optimizacao S
+
+Como a Criacao de janelas series temporais relaciona-se com o seguintes:
+Hierarquias
+Detecao de anomalias
+agoritmos genericos
+
+Matrix Profile
+Mais tarde: Pyod (outlier detection)
+
+Distancia minima
+AUC (‘threshold’)
+
+## Ao aumentar o quartile a anomalia restringe aos valores dos eventos com duracao excessiva, apesar da duranca aumentar com o tempo seguindo uma periodicidade semanal
+
+verificar as anomalias serem iguais entre os dois colunas ja que tem o mesmo numero de anomalias do Event Duration and #Events
+--- [36] markdown
+## 5.1 Statistical Thresholding
+--- [37] code
+# def create_features(data, window_size):
+#     X = []
+#     y = []
+#     for i in range(len(data) - window_size):
+#         X.append(data.iloc[i:i+window_size].drop(columns=['Anomaly']).values.flatten())
+#         y.append(data.iloc[i+window_size]['Anomaly'])
+#     return np.array(X), np.array(y)
+
+
+# def plot_confusion_matrix(y_true, y_pred, labels=None, title='Confusion Matrix'):
+#     cm = confusion_matrix(y_true, y_pred, labels=labels)
+#     disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=labels)
+#     disp.plot(cmap=plt.cm.Blues)
+#     plt.title(title)
+#     plt.show()
+    
+    
+# def sliding_window_auc(window_size, df, plot=False):
+#     # Convert TIMESTAMP to datetime and sort
+#     data = df.set_index("TIMESTAMP")
+
+
+#     # Split into train and test sets
+#     X, y = create_features(data, window_size)
+    
+#     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
+#     # Train the Logistic Regression model
+#     model = LogisticRegression(max_iter=1000)
+#     print(X_train.size, y_train.size)
+#     model.fit(X_train, y_train)
+
+#     # Get predicted probabilities for the positive class
+#     probabilities = model.predict_proba(X_test)[:, 1]
+
+#     # Compute AUC
+#     auc_score = roc_auc_score(y_test, probabilities)
+
+#     if plot:
+#         # Use the predictions, not the probabilities, to plot the confusion matrix
+#         y_pred = model.predict(X_test)
+#         plot_confusion_matrix(y_test, y_pred)
+    
+#     return auc_score
+--- [38] code
+# def HTS_auc(aggregated_df, window_size):
+#     auc_scores = {}
+
+#     # Using tqdm to show progress. Wrap the .items() of the dictionary with tqdm.
+#     for leaf_name, df_leaf in tqdm(aggregated_df.items(), desc="Calculating AUCs"):
+#         if df_leaf["Anomaly"].sum() > 0:
+#             auc_score = sliding_window_auc(window_size, df=df_leaf, plot=False)
+#             auc_scores[leaf_name] = auc_score
+
+#     # Calculate the mean AUC score across all DataFrames
+#     auc_score_mean = sum(auc_scores.values()) / len(auc_scores) if auc_scores else 0
+
+#     return auc_score_mean
+
+# HTS_auc(aggregated_df, 24)
+--- [39] markdown
+As hierarquias so entram aqui nesta fase?
+as anomalias agregam, so basta ter um dos valores da juncao positiva para ser anomalia
+
+Amostragem aleatória das hierarquias
+Definir população inicial
+Como fazer as mutações
+
+Genetic Programing
+
+Ex: 
+ > Comocar com 100 aleatorias e avaliamos o fitness (F1 score)
+ > > 100 hieraquias aleatorias
+ > Escolher as 20 melhores e fazer multacoes ate termos uma nova populacao de 100 
+ > Paragem:
+ > > O melhor F1 score da populacao nao aumenta mais que 1%
+ > >
+
+--- [40] code
+

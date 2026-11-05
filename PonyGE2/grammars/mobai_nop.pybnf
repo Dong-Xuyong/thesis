@@ -1,0 +1,6 @@
+<node> ::=  {:A0<node>{::}A1<node>:} |
+            {:B0<node>{::}B1<node>{::}B2<node>{::}B3<node>:} |
+            {:C0<node>{::}C1<node>{::}C2<node>{::}C3<node>{::}C4<node>:} |
+            {:D0<node>{::}D1<node>{::}D2<node>:} |
+            {:E0<node>{::}E1<node>:} |
+            -END

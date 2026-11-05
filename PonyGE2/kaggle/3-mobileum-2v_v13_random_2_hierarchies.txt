@@ -1,0 +1,4313 @@
+cells 42
+--- [0] markdown
+<a class="anchor" id="0"></a>
+# **Mubileum Duration Generation with VAE**
+--- [1] markdown
+<a class="anchor" id="0.1"></a>
+# **Table of Contents**
+
+- 1. [Setup](#1)
+- 2. [Data Preparation](#2)
+<!--     - 2.1 [Data Preparation for LSTM](#2.1) -->
+- 3. [EDA](#3)
+- 4. [Anomaly Detection](#4)
+- 5. [Anomaly Creation](#5)
+- 6. [Genetic Algoritm Otimization](#6)
+
+--- [2] markdown
+# **1. SetUp** <a class="anchor" id="1"></a>
+
+[Table of Contents](#0.1)
+--- [3] code
+# Data Manipulation and Analysis
+import numpy as np
+import pandas as pd
+import random
+from tqdm import tqdm
+import os
+from scipy.stats import norm
+
+#Visualization
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# Scikit-Learn for Machine Learning
+from sklearn.metrics import roc_auc_score, confusion_matrix, ConfusionMatrixDisplay
+
+
+import pickle
+from sklearn.metrics import precision_recall_curve
+
+
+# Read a CSV file into a Pandas DataFrame
+df = pd.read_csv("/kaggle/input/mobileum/df_anomaly.csv")
+--- [4] code
+filters = pd.read_csv("/kaggle/input/mobileum-empty-agg/not_empty_combinations.csv")
+--- [5] code
+filters
+>>>      Call Type   Event Type Subscriber Type Traffic Type Service Type  \
+>>> 0          SMS   ORIGINATED        Postpaid      OFF-NET  NOT-ROAMING   
+>>> 1          SMS   ORIGINATED        Postpaid          INT  NOT-ROAMING   
+>>> 2          SMS   ORIGINATED        Postpaid       ON-NET  NOT-ROAMING   
+>>> 3          SMS   ORIGINATED       Roamer In      OFF-NET  NOT-ROAMING   
+>>> 4          SMS   ORIGINATED       Roamer In      OFF-NET  NOT-ROAMING   
+>>> ...        ...          ...             ...          ...          ...   
+>>> 1550     VOICE  ROAMING OUT         Prepaid          INT      ROAMING   
+>>> 1551     VOICE  ROAMING OUT         Prepaid       ON-NET      ROAMING   
+>>> 1552     VOICE  ROAMING OUT           Other      OFF-NET      ROAMING   
+>>> 1553     VOICE  ROAMING OUT           Other          INT      ROAMING   
+>>> 1554     VOICE  ROAMING OUT           Other       ON-NET      ROAMING   
+>>> 
+>>>      Partner Description  Number of examples (rows)  
+>>> 0                 P_0001                       2110  
+>>> 1                 P_0001                       2110  
+>>> 2                 P_0001                       2110  
+>>> 3                 P_0043                          4  
+>>> 4                 P_0044                          7  
+>>> ...                  ...                        ...  
+>>> 1550              P_0001                        217  
+>>> 1551              P_0001                       2110  
+>>> 1552              P_0001                       2110  
+>>> 1553              P_0001                       2110  
+>>> 1554              P_0001     
+--- [6] code
+df
+>>>        Call Type    Event Type Subscriber Type Traffic Type Service Type  \
+>>> 0            SMS    ORIGINATED        Postpaid      OFF-NET  NOT-ROAMING   
+>>> 1          VOICE  CALL FORWARD     Application          INT  NOT-ROAMING   
+>>> 2          VOICE    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> 3          VOICE    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> 4          VOICE    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> ...          ...           ...             ...          ...          ...   
+>>> 958475       SMS    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> 958476       SMS    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> 958477       SMS    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> 958478       SMS    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> 958479       SMS    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> 
+>>>        Partner Description  #Events            TIMESTAMP  Anomaly  
+>>> 0                   P_0001      105  2022-07-18 00:00:00        0  
+>>> 1                   P_0001       16  2022-07-18 00:00:00        0  
+>>> 2                   P_0002        7  2022-07-18 00:00:00        0  
+>>> 3                   P_0003       15  2022-07-18 00:00:00        0  
+>>> 4                   P_0004        1  2022-07-18 00:00:00        0  
+>>> ...                    ...      ...                  ...      ...  
+>>> 958475              P_0280       30  2022-10-13 21:00:00        0  
+>>> 958476              P_0079      265  2022-1
+--- [7] markdown
+# **4. Anomaly Creation** <a class="anchor" id="4"></a>
+
+[Table of Contents](#0.1)
+--- [8] code
+def contain_condition(df, conditions):
+    if not conditions:
+        return False
+    pd_conditions = " & ".join([f'`{key}` == "{value}"' for key, value in conditions.items()])
+    return df.eval(pd_conditions).any()
+--- [9] code
+def filter_and_aggregate(df, filter_conditions, hierarchy=False):
+    """
+    Filters the DataFrame based on given conditions and aggregates by summing up a specified column.
+    
+    Args:
+    - df: The original DataFrame.
+    - filter_conditions: A dictionary where keys are column names and values are the values to filter on.
+    
+    Returns:
+    - A new DataFrame with the filtered and aggregated data.
+    """
+    # Apply the filter conditions
+    df_fil = df.copy()
+    
+    for col, val in filter_conditions.items():
+        df_fil = df_fil[df_fil[col] == val]
+    
+    # Drop the columns used for filtering
+    df_fil.drop(columns=list(filter_conditions.keys()), inplace=True)
+    
+    # Group by 'TIMESTAMP' and sum up the '#Events' column
+    if hierarchy:
+        df_agg = df_fil.groupby('TIMESTAMP')[['#Events','Anomaly']].sum().reset_index()
+    else:
+        df_agg = df_fil.groupby('TIMESTAMP')['#Events'].sum().reset_index()
+    
+    return df_agg
+
+--- [10] markdown
+1. get the anomaly_value and the ts with the function. 
+2. go to the original df get all the rows with the same ts (TIMESTAMP)
+3. from all the row calculate the sum of column (#Events)
+4. calculate the multiplier witch m = anomaly_value/ sum of column (#Events)
+5. use the multiplier to all rows of the #Events and do the round to get int
+6. Create an new columns witch name "Anomaly" with 0 or 1, which all row which has column 
+7. gerate an orignal and modified df
+--- [11] code
+
+--- [12] markdown
+The warning message you’ve encountered, "RuntimeWarning: divide by zero encountered in scalar divide," suggests that at some point in your code, there is a division operation where the divisor (sum_events) is zero.
+--- [13] markdown
+# 5. Hierarchical Structure
+--- [14] code
+df
+>>>        Call Type    Event Type Subscriber Type Traffic Type Service Type  \
+>>> 0            SMS    ORIGINATED        Postpaid      OFF-NET  NOT-ROAMING   
+>>> 1          VOICE  CALL FORWARD     Application          INT  NOT-ROAMING   
+>>> 2          VOICE    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> 3          VOICE    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> 4          VOICE    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> ...          ...           ...             ...          ...          ...   
+>>> 958475       SMS    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> 958476       SMS    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> 958477       SMS    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> 958478       SMS    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> 958479       SMS    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> 
+>>>        Partner Description  #Events            TIMESTAMP  Anomaly  
+>>> 0                   P_0001      105  2022-07-18 00:00:00        0  
+>>> 1                   P_0001       16  2022-07-18 00:00:00        0  
+>>> 2                   P_0002        7  2022-07-18 00:00:00        0  
+>>> 3                   P_0003       15  2022-07-18 00:00:00        0  
+>>> 4                   P_0004        1  2022-07-18 00:00:00        0  
+>>> ...                    ...      ...                  ...      ...  
+>>> 958475              P_0280       30  2022-10-13 21:00:00        0  
+>>> 958476              P_0079      265  2022-1
+--- [15] code
+available_categories = {
+    'Call Type': df['Call Type'].unique().tolist(),
+    'Event Type': df['Event Type'].unique().tolist(),
+    'Subscriber Type': df['Subscriber Type'].unique().tolist(),
+    'Traffic Type': df['Traffic Type'].unique().tolist(),
+    'Service Type': df['Service Type'].unique().tolist(),
+    'Partner Description': df['Partner Description'].unique().tolist(),
+    'STOP': False
+}
+--- [16] code
+def revert_key_value_mapping(available_categories):
+    reversed_mapping = {}
+    for key, values in available_categories.items():
+        if isinstance(values, list):  # Ensure the value is iterable
+            for value in values:
+                if value not in reversed_mapping:
+                    reversed_mapping[value] = []
+                reversed_mapping[value].append(key)
+        else:
+            # Handle non-list values (like the 'STOP' flag)
+            value = values
+            if value not in reversed_mapping:
+                reversed_mapping[value] = []
+            reversed_mapping[value].append(key)
+    return reversed_mapping
+--- [17] code
+def create_hierarchy(available_categories):
+
+    hierarchy = {}
+    current_column = random.choice(list(available_categories.keys()))
+    values = available_categories.get(current_column)
+    
+    if values:
+        for value in values:
+            key=value
+            new_categories = available_categories.copy()
+            new_categories.pop(current_column)
+            hierarchy[key] = create_hierarchy(new_categories)
+            
+    return hierarchy
+--- [18] code
+def flatten_dict_structure(d, rt_available_categories, parent_path=[]):
+    items = []
+    for k, v in d.items():
+        # Determine the category list for the current key from the mapping
+        categories = rt_available_categories.get(k)
+        
+        # Iterate through categories (there could be more than one, but typically one for this use case)
+        for category in categories:
+            current_path = parent_path + [(category, k)]
+            
+            if isinstance(v, dict) and v:  # If v is a non-empty dictionary, continue recursion
+                items.extend(flatten_dict_structure(v, rt_available_categories, current_path))
+            elif not v:  # If the dictionary is empty, construct the entry from the path
+                entry = {cat: val for cat, val in current_path}
+                items.append(entry)
+    return items
+--- [19] code
+    # Define start and end timestamps
+    start = '2022-07-18 00:00:00'
+    end = '2022-10-13 21:00:00'
+    
+    # Generate the timestamp range at 1-hour intervals
+    timestamp_range = pd.date_range(start=start, end=end, freq='h')
+    
+    # Create the DataFrame
+    df_default = pd.DataFrame({
+        'TIMESTAMP': timestamp_range,
+        '#Events': 0,
+        'Anomaly': 0
+    })
+--- [20] code
+df
+>>>        Call Type    Event Type Subscriber Type Traffic Type Service Type  \
+>>> 0            SMS    ORIGINATED        Postpaid      OFF-NET  NOT-ROAMING   
+>>> 1          VOICE  CALL FORWARD     Application          INT  NOT-ROAMING   
+>>> 2          VOICE    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> 3          VOICE    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> 4          VOICE    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> ...          ...           ...             ...          ...          ...   
+>>> 958475       SMS    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> 958476       SMS    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> 958477       SMS    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> 958478       SMS    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> 958479       SMS    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> 
+>>>        Partner Description  #Events            TIMESTAMP  Anomaly  
+>>> 0                   P_0001      105  2022-07-18 00:00:00        0  
+>>> 1                   P_0001       16  2022-07-18 00:00:00        0  
+>>> 2                   P_0002        7  2022-07-18 00:00:00        0  
+>>> 3                   P_0003       15  2022-07-18 00:00:00        0  
+>>> 4                   P_0004        1  2022-07-18 00:00:00        0  
+>>> ...                    ...      ...                  ...      ...  
+>>> 958475              P_0280       30  2022-10-13 21:00:00        0  
+>>> 958476              P_0079      265  2022-1
+--- [21] code
+df_default
+
+>>>                TIMESTAMP  #Events  Anomaly
+>>> 0    2022-07-18 00:00:00        0        0
+>>> 1    2022-07-18 01:00:00        0        0
+>>> 2    2022-07-18 02:00:00        0        0
+>>> 3    2022-07-18 03:00:00        0        0
+>>> 4    2022-07-18 04:00:00        0        0
+>>> ...                  ...      ...      ...
+>>> 2105 2022-10-13 17:00:00        0        0
+>>> 2106 2022-10-13 18:00:00        0        0
+>>> 2107 2022-10-13 19:00:00        0        0
+>>> 2108 2022-10-13 20:00:00        0        0
+>>> 2109 2022-10-13 21:00:00        0        0
+>>> 
+>>> [2110 rows x 3 columns]
+--- [22] code
+df["TIMESTAMP"] = pd.to_datetime(df['TIMESTAMP'])
+--- [23] code
+df["TIMESTAMP"].dtype
+>>> dtype('<M8[ns]')
+--- [24] code
+def set_leaf(df):
+    df['Anomaly'] = df['Anomaly'].apply(lambda x: 1 if x > 0 else x)
+    
+    # Define start and end timestamps
+    start = '2022-07-18 00:00:00'
+    end = '2022-10-13 21:00:00'
+    
+    # Generate the timestamp range at 1-hour intervals
+    timestamp_range = pd.date_range(start=start, end=end, freq='h')
+    
+    # Create the DataFrame
+    df_default = pd.DataFrame({
+        'TIMESTAMP': timestamp_range,
+        '#Events': 0,
+        'Anomaly': 0
+    })
+    print(df["TIMESTAMP"].dtype)
+    print(df_default["TIMESTAMP"].dtype)
+    
+#     df_default.loc[df_default["TIMESTAMP"] == df["TIMESTAMP"], df.columns[1:]] = df.iloc[:, 1:].values
+    # Merge original DataFrame with the default DataFrame based on 'TIMESTAMP'
+    df_default = pd.merge(df_default, df, on='TIMESTAMP', how='left', suffixes=('', '_y'))
+    
+    # Overwrite columns with values from df if available
+    for column in df.columns[1:]:  # assuming 'TIMESTAMP' is at index 0
+        df_default[column] = df_default[column + '_y'].combine_first(df_default[column])
+    
+    # Drop helper columns
+    df_default.drop(columns=[col for col in df_default.columns if '_y' in col], inplace=True)
+    
+    return df_default
+
+--- [25] code
+def rm_empty_agg(df, ft_hierarchy):
+    items = []
+    # Wrap ft_hierarchy with tqdm for a progress bar
+    print("Removing the empty aggregations from the hierarchy!")
+    for conditions in tqdm(ft_hierarchy, desc='Processing conditions'):
+        if contain_condition(filters, conditions):
+            items.append(conditions)
+    return items
+--- [26] code
+def create_final_hierarchy(df, rm_ft_hierarchy):
+    aggregated_df = {}
+    
+    # Wrap the enumeration with tqdm for better progress visibility
+    for i, conditions in tqdm(enumerate(rm_ft_hierarchy, start=1), total=len(rm_ft_hierarchy), desc="Processing conditions"):
+        agg_df = filter_and_aggregate(df, conditions, hierarchy=True)
+
+        if not agg_df.empty:
+            agg_df = set_leaf(agg_df)
+
+        aggregated_df[f'leaf_{i}'] = agg_df
+
+    return aggregated_df
+--- [27] code
+def calculate_AUC(df):
+    df_aux = df.copy()
+    mean = df_aux["#Events"].mean()
+    std = df_aux["#Events"].std()
+    df_aux['z_score'] = (df_aux['#Events'] - mean) / std
+    df_aux['AUC_score'] = norm.cdf(df_aux['z_score'])
+
+    return df_aux['AUC_score'].mean()
+--- [28] code
+def calculate_AUC_hierarchy(aggregated_df):
+    auc_scores = {}
+
+    # Using tqdm to show progress. Wrap the .items() of the dictionary with tqdm.
+    for leaf_name, df_leaf in tqdm(aggregated_df.items(), desc="Calculating AUCs"):
+        if df_leaf["Anomaly"].sum() > 0:
+            auc_score = calculate_AUC(df_leaf)
+            auc_scores[leaf_name] = auc_score
+
+    # Calculate the mean AUC score across all DataFrames
+    auc_score_mean = sum(auc_scores.values()) / len(auc_scores) if auc_scores else 0
+
+    return auc_score_mean
+--- [29] code
+def pipeline_hierarchy(df, n_hierarchies, available_categories):
+    group_hierarchies = []
+    auc_hierarchies = []
+    rt_available_categories = revert_key_value_mapping(available_categories)
+    for _ in range(n_hierarchies):
+        hierarchy = create_hierarchy(available_categories)
+        ft_hierarchy = flatten_dict_structure(hierarchy, rt_available_categories)
+        rm_ft_hierarchy = rm_empty_agg(df, ft_hierarchy)
+        aggregated_df = create_final_hierarchy(df, rm_ft_hierarchy)
+        auc_hierarchy = calculate_AUC_hierarchy(aggregated_df)
+        group_hierarchies.append(aggregated_df)
+        auc_hierarchies.append(auc_hierarchy)
+        
+    return group_hierarchies, auc_hierarchies
+--- [30] code
+df
+>>>        Call Type    Event Type Subscriber Type Traffic Type Service Type  \
+>>> 0            SMS    ORIGINATED        Postpaid      OFF-NET  NOT-ROAMING   
+>>> 1          VOICE  CALL FORWARD     Application          INT  NOT-ROAMING   
+>>> 2          VOICE    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> 3          VOICE    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> 4          VOICE    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> ...          ...           ...             ...          ...          ...   
+>>> 958475       SMS    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> 958476       SMS    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> 958477       SMS    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> 958478       SMS    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> 958479       SMS    TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> 
+>>>        Partner Description  #Events           TIMESTAMP  Anomaly  
+>>> 0                   P_0001      105 2022-07-18 00:00:00        0  
+>>> 1                   P_0001       16 2022-07-18 00:00:00        0  
+>>> 2                   P_0002        7 2022-07-18 00:00:00        0  
+>>> 3                   P_0003       15 2022-07-18 00:00:00        0  
+>>> 4                   P_0004        1 2022-07-18 00:00:00        0  
+>>> ...                    ...      ...                 ...      ...  
+>>> 958475              P_0280       30 2022-10-13 21:00:00        0  
+>>> 958476              P_0079      265 2022-10-13 21:0
+--- [31] code
+group_hierarchies, auc_hierarchies = pipeline_hierarchy(df, 2, available_categories)
+>>> Removing the empty aggregations from the hierarchy!
+>>> 
+>>> Processing conditions: 100%|██████████| 22649/22649 [02:28<00:00, 152.45it/s]
+>>> Processing conditions:   7%|▋         | 2/27 [00:00<00:04,  5.25it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  15%|█▍        | 4/27 [00:00<00:04,  5.71it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  22%|██▏       | 6/27 [00:01<00:03,  5.87it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  30%|██▉       | 8/27 [00:01<00:03,  5.70it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  37%|███▋      | 10/27 [00:01<00:02,  5.78it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  44%|████▍     | 12/27 [00:02<00:03,  3.96it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  52%|█████▏    | 14/27 [00:02<00:02,  4.50it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  59%|█████▉    | 16/27 [00:03<00:02,  4.88it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  67%|██████▋   | 18/27 [00:03<00:01,  5.13it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  74%|███████▍  | 20/27 [00:03<00:01,  5.28it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  81%|████████▏ | 22/27 [00:04<00:00,  5.33it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  89%|████████▉ | 24/27 [00:04<00:00,  5.32it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  96%|█████████▋| 26/27 [00:05<00:00,  5.29it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions: 100%|██████████| 27/27 [00:05<00:00,  5.10it/s]
+>>> 
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Calculating AUCs: 100%|██████████| 27/27 [00:00<00:00, 488.52it/s]
+>>> 
+>>> Removing the empty aggregations from the hierarchy!
+>>> 
+>>> Processing conditions: 100%|██████████| 21424/21424 [02:21<00:00, 151.65it/s]
+>>> Processing conditions:   0%|          | 2/932 [00:00<02:55,  5.31it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   0%|          | 4/932 [00:00<02:58,  5.21it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   1%|          | 6/932 [00:01<02:54,  5.32it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   1%|          | 8/932 [00:01<02:52,  5.36it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   1%|          | 10/932 [00:01<02:50,  5.42it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   1%|▏         | 12/932 [00:02<02:48,  5.46it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   2%|▏         | 14/932 [00:02<02:47,  5.47it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   2%|▏         | 16/932 [00:02<02:47,  5.47it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   2%|▏         | 18/932 [00:03<02:47,  5.44it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   2%|▏         | 19/932 [00:03<03:42,  4.11it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   2%|▏         | 20/932 [00:04<04:16,  3.56it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   2%|▏         | 21/932 [00:04<04:37,  3.28it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   2%|▏         | 22/932 [00:04<04:58,  3.05it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   2%|▏         | 23/932 [00:05<05:07,  2.95it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   3%|▎         | 24/932 [00:05<05:14,  2.89it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   3%|▎         | 25/932 [00:05<05:16,  2.86it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   3%|▎         | 26/932 [00:06<05:18,  2.85it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   3%|▎         | 27/932 [00:06<05:21,  2.82it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   3%|▎         | 28/932 [00:06<05:21,  2.81it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   3%|▎         | 29/932 [00:07<05:22,  2.80it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   3%|▎         | 30/932 [00:07<05:24,  2.78it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   3%|▎         | 31/932 [00:08<05:24,  2.78it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   3%|▎         | 32/932 [00:08<05:21,  2.80it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   4%|▎         | 33/932 [00:08<05:21,  2.79it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   4%|▎         | 34/932 [00:09<05:20,  2.80it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   4%|▍         | 35/932 [00:09<05:18,  2.82it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   4%|▍         | 36/932 [00:09<05:17,  2.82it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   4%|▍         | 37/932 [00:10<05:17,  2.82it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   4%|▍         | 38/932 [00:10<05:16,  2.83it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   4%|▍         | 39/932 [00:10<05:16,  2.82it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   4%|▍         | 40/932 [00:11<05:14,  2.84it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   4%|▍         | 41/932 [00:11<05:13,  2.84it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   5%|▍         | 42/932 [00:11<05:13,  2.84it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   5%|▍         | 43/932 [00:12<05:14,  2.83it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   5%|▍         | 44/932 [00:12<05:14,  2.82it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   5%|▍         | 45/932 [00:13<05:16,  2.80it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   5%|▍         | 46/932 [00:13<05:17,  2.79it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   5%|▌         | 47/932 [00:13<05:18,  2.78it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   5%|▌         | 48/932 [00:14<05:17,  2.79it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   5%|▌         | 49/932 [00:14<05:18,  2.77it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   5%|▌         | 50/932 [00:14<05:18,  2.77it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   5%|▌         | 51/932 [00:15<05:16,  2.78it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   6%|▌         | 52/932 [00:15<05:15,  2.79it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   6%|▌         | 53/932 [00:15<05:16,  2.78it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   6%|▌         | 54/932 [00:16<05:15,  2.78it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   6%|▌         | 55/932 [00:16<05:14,  2.79it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   6%|▌         | 56/932 [00:16<05:14,  2.79it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   6%|▌         | 57/932 [00:17<05:13,  2.79it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   6%|▌         | 58/932 [00:17<05:13,  2.79it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   6%|▋         | 59/932 [00:18<05:13,  2.79it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   6%|▋         | 60/932 [00:18<05:12,  2.79it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   7%|▋         | 61/932 [00:18<05:12,  2.79it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   7%|▋         | 62/932 [00:19<05:12,  2.79it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   7%|▋         | 63/932 [00:19<05:11,  2.79it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   7%|▋         | 64/932 [00:19<05:10,  2.79it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   7%|▋         | 65/932 [00:20<05:11,  2.79it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   7%|▋         | 66/932 [00:20<05:10,  2.79it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   7%|▋         | 67/932 [00:20<05:12,  2.77it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   7%|▋         | 68/932 [00:21<05:12,  2.77it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   7%|▋         | 69/932 [00:21<05:11,  2.77it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   8%|▊         | 70/932 [00:22<05:10,  2.77it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   8%|▊         | 71/932 [00:22<05:10,  2.77it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   8%|▊         | 72/932 [00:22<05:11,  2.76it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   8%|▊         | 73/932 [00:23<05:10,  2.77it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   8%|▊         | 74/932 [00:23<05:08,  2.78it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   8%|▊         | 75/932 [00:23<05:08,  2.78it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   8%|▊         | 76/932 [00:24<05:07,  2.79it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   8%|▊         | 77/932 [00:24<05:10,  2.75it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   8%|▊         | 78/932 [00:24<05:08,  2.77it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   8%|▊         | 79/932 [00:25<05:05,  2.79it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   9%|▊         | 80/932 [00:25<05:03,  2.81it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   9%|▊         | 81/932 [00:25<05:02,  2.82it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   9%|▉         | 82/932 [00:26<05:01,  2.82it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   9%|▉         | 83/932 [00:26<05:07,  2.76it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   9%|▉         | 84/932 [00:27<05:07,  2.75it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   9%|▉         | 85/932 [00:27<05:04,  2.78it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   9%|▉         | 86/932 [00:27<05:04,  2.78it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   9%|▉         | 87/932 [00:28<05:03,  2.78it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:   9%|▉         | 88/932 [00:28<05:01,  2.80it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  10%|▉         | 89/932 [00:28<05:02,  2.79it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  10%|▉         | 90/932 [00:29<05:00,  2.80it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  10%|▉         | 91/932 [00:29<04:59,  2.81it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  10%|▉         | 92/932 [00:29<04:58,  2.82it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  10%|▉         | 93/932 [00:30<04:57,  2.82it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  10%|█         | 94/932 [00:30<04:57,  2.82it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  10%|█         | 95/932 [00:30<04:57,  2.81it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  10%|█         | 96/932 [00:31<04:56,  2.82it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  10%|█         | 97/932 [00:31<04:56,  2.81it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  11%|█         | 98/932 [00:32<04:56,  2.81it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  11%|█         | 99/932 [00:32<04:57,  2.80it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  11%|█         | 100/932 [00:32<04:57,  2.79it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  11%|█         | 101/932 [00:33<04:56,  2.80it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  11%|█         | 102/932 [00:33<04:55,  2.81it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  11%|█         | 103/932 [00:33<04:55,  2.81it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  11%|█         | 104/932 [00:34<04:55,  2.80it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  11%|█▏        | 105/932 [00:34<05:00,  2.75it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  11%|█▏        | 106/932 [00:34<04:59,  2.76it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  11%|█▏        | 107/932 [00:35<04:57,  2.78it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  12%|█▏        | 108/932 [00:35<04:57,  2.77it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  12%|█▏        | 109/932 [00:36<04:55,  2.78it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  12%|█▏        | 110/932 [00:36<04:53,  2.80it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  12%|█▏        | 111/932 [00:36<04:53,  2.80it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  12%|█▏        | 112/932 [00:37<04:53,  2.79it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  12%|█▏        | 113/932 [00:37<04:52,  2.80it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  12%|█▏        | 114/932 [00:37<04:52,  2.80it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  12%|█▏        | 115/932 [00:38<04:52,  2.80it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  12%|█▏        | 116/932 [00:38<04:51,  2.80it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  13%|█▎        | 117/932 [00:38<04:51,  2.80it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  13%|█▎        | 118/932 [00:39<04:51,  2.79it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  13%|█▎        | 119/932 [00:39<04:50,  2.79it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  13%|█▎        | 120/932 [00:39<04:49,  2.80it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  13%|█▎        | 121/932 [00:40<04:47,  2.82it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  13%|█▎        | 122/932 [00:40<04:46,  2.82it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  13%|█▎        | 123/932 [00:40<04:46,  2.82it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  13%|█▎        | 124/932 [00:41<04:45,  2.83it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  13%|█▎        | 125/932 [00:41<04:46,  2.82it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  14%|█▎        | 126/932 [00:42<04:48,  2.80it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  14%|█▎        | 127/932 [00:42<04:49,  2.78it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  14%|█▎        | 128/932 [00:42<04:50,  2.77it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  14%|█▍        | 129/932 [00:43<04:51,  2.76it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  14%|█▍        | 130/932 [00:43<04:51,  2.75it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  14%|█▍        | 131/932 [00:43<04:50,  2.76it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  14%|█▍        | 132/932 [00:44<04:49,  2.76it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  14%|█▍        | 133/932 [00:44<04:56,  2.69it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  14%|█▍        | 134/932 [00:44<04:54,  2.71it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  14%|█▍        | 135/932 [00:45<04:52,  2.72it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  15%|█▍        | 136/932 [00:45<04:51,  2.73it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  15%|█▍        | 137/932 [00:46<04:50,  2.74it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  15%|█▍        | 138/932 [00:46<04:49,  2.74it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  15%|█▍        | 139/932 [00:46<04:49,  2.74it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  15%|█▌        | 140/932 [00:47<04:47,  2.75it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  15%|█▌        | 141/932 [00:47<04:47,  2.75it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  15%|█▌        | 142/932 [00:47<04:46,  2.76it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  15%|█▌        | 143/932 [00:48<04:47,  2.74it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  15%|█▌        | 144/932 [00:48<04:45,  2.76it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  16%|█▌        | 145/932 [00:48<04:43,  2.78it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  16%|█▌        | 146/932 [00:49<04:42,  2.78it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  16%|█▌        | 147/932 [00:49<04:44,  2.76it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  16%|█▌        | 148/932 [00:50<04:47,  2.73it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  16%|█▌        | 149/932 [00:50<04:49,  2.70it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  16%|█▌        | 150/932 [00:50<04:50,  2.69it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  16%|█▌        | 151/932 [00:51<04:50,  2.69it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  16%|█▋        | 152/932 [00:51<04:50,  2.69it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  16%|█▋        | 153/932 [00:51<04:50,  2.68it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  17%|█▋        | 154/932 [00:52<04:51,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  17%|█▋        | 155/932 [00:52<04:53,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  17%|█▋        | 156/932 [00:53<04:52,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  17%|█▋        | 157/932 [00:53<04:52,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  17%|█▋        | 158/932 [00:53<04:50,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  17%|█▋        | 159/932 [00:54<04:50,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  17%|█▋        | 160/932 [00:54<04:55,  2.61it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  17%|█▋        | 161/932 [00:55<04:53,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  17%|█▋        | 162/932 [00:55<04:51,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  17%|█▋        | 163/932 [00:55<04:49,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  18%|█▊        | 164/932 [00:56<04:48,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  18%|█▊        | 165/932 [00:56<04:47,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  18%|█▊        | 166/932 [00:56<04:46,  2.68it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  18%|█▊        | 167/932 [00:57<04:46,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  18%|█▊        | 168/932 [00:57<04:47,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  18%|█▊        | 169/932 [00:58<04:49,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  18%|█▊        | 170/932 [00:58<04:55,  2.58it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  18%|█▊        | 171/932 [00:58<04:54,  2.58it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  18%|█▊        | 172/932 [00:59<04:52,  2.60it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  19%|█▊        | 173/932 [00:59<04:50,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  19%|█▊        | 174/932 [00:59<04:47,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  19%|█▉        | 175/932 [01:00<04:45,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  19%|█▉        | 176/932 [01:00<04:45,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  19%|█▉        | 177/932 [01:01<04:44,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  19%|█▉        | 178/932 [01:01<04:44,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  19%|█▉        | 179/932 [01:01<04:45,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  19%|█▉        | 180/932 [01:02<04:43,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  19%|█▉        | 181/932 [01:02<04:42,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  20%|█▉        | 182/932 [01:02<04:43,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  20%|█▉        | 183/932 [01:03<04:43,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  20%|█▉        | 184/932 [01:03<04:42,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  20%|█▉        | 185/932 [01:04<04:41,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  20%|█▉        | 186/932 [01:04<04:39,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  20%|██        | 187/932 [01:04<04:43,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  20%|██        | 188/932 [01:05<04:41,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  20%|██        | 189/932 [01:05<04:40,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  20%|██        | 190/932 [01:05<04:40,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  20%|██        | 191/932 [01:06<04:38,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  21%|██        | 192/932 [01:06<04:37,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  21%|██        | 193/932 [01:07<04:37,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  21%|██        | 194/932 [01:07<04:38,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  21%|██        | 195/932 [01:07<04:36,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  21%|██        | 196/932 [01:08<04:37,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  21%|██        | 197/932 [01:08<04:36,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  21%|██        | 198/932 [01:08<04:35,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  21%|██▏       | 199/932 [01:09<04:35,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  21%|██▏       | 200/932 [01:09<04:36,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  22%|██▏       | 201/932 [01:10<04:37,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  22%|██▏       | 202/932 [01:10<04:37,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  22%|██▏       | 203/932 [01:10<04:37,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  22%|██▏       | 204/932 [01:11<04:37,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  22%|██▏       | 205/932 [01:11<04:36,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  22%|██▏       | 206/932 [01:12<04:34,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  22%|██▏       | 207/932 [01:12<04:32,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  22%|██▏       | 208/932 [01:12<04:32,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  22%|██▏       | 209/932 [01:13<04:32,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  23%|██▎       | 210/932 [01:13<04:31,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  23%|██▎       | 211/932 [01:13<04:30,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  23%|██▎       | 212/932 [01:14<04:30,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  23%|██▎       | 213/932 [01:14<04:33,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  23%|██▎       | 214/932 [01:15<04:30,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  23%|██▎       | 215/932 [01:15<04:28,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  23%|██▎       | 216/932 [01:15<04:27,  2.68it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  23%|██▎       | 217/932 [01:16<04:27,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  23%|██▎       | 218/932 [01:16<04:28,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  23%|██▎       | 219/932 [01:16<04:29,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  24%|██▎       | 220/932 [01:17<04:30,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  24%|██▎       | 221/932 [01:17<04:31,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  24%|██▍       | 222/932 [01:18<04:32,  2.61it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  24%|██▍       | 223/932 [01:18<04:32,  2.61it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  24%|██▍       | 224/932 [01:18<04:31,  2.61it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  24%|██▍       | 225/932 [01:19<04:31,  2.61it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  24%|██▍       | 226/932 [01:19<04:29,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  24%|██▍       | 227/932 [01:19<04:27,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  24%|██▍       | 228/932 [01:20<04:28,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  25%|██▍       | 229/932 [01:20<04:28,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  25%|██▍       | 230/932 [01:21<04:27,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  25%|██▍       | 231/932 [01:21<04:27,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  25%|██▍       | 232/932 [01:21<04:26,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  25%|██▌       | 233/932 [01:22<04:28,  2.61it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  25%|██▌       | 234/932 [01:22<04:28,  2.60it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  25%|██▌       | 235/932 [01:23<04:27,  2.61it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  25%|██▌       | 236/932 [01:23<04:25,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  25%|██▌       | 237/932 [01:23<04:24,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  26%|██▌       | 238/932 [01:24<04:23,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  26%|██▌       | 239/932 [01:24<04:28,  2.59it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  26%|██▌       | 240/932 [01:24<04:24,  2.61it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  26%|██▌       | 241/932 [01:25<04:23,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  26%|██▌       | 242/932 [01:25<04:20,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  26%|██▌       | 243/932 [01:26<04:20,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  26%|██▌       | 244/932 [01:26<04:18,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  26%|██▋       | 245/932 [01:26<04:18,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  26%|██▋       | 246/932 [01:27<04:17,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  27%|██▋       | 247/932 [01:27<04:16,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  27%|██▋       | 248/932 [01:27<04:16,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  27%|██▋       | 249/932 [01:28<04:16,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  27%|██▋       | 250/932 [01:28<04:15,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  27%|██▋       | 251/932 [01:29<04:16,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  27%|██▋       | 252/932 [01:29<04:15,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  27%|██▋       | 253/932 [01:29<04:21,  2.60it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  27%|██▋       | 254/932 [01:30<04:22,  2.58it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  27%|██▋       | 255/932 [01:30<04:20,  2.59it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  27%|██▋       | 256/932 [01:31<04:19,  2.61it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  28%|██▊       | 257/932 [01:31<04:17,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  28%|██▊       | 258/932 [01:31<04:18,  2.60it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  28%|██▊       | 259/932 [01:32<04:17,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  28%|██▊       | 260/932 [01:32<04:16,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  28%|██▊       | 261/932 [01:32<04:14,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  28%|██▊       | 262/932 [01:33<04:13,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  28%|██▊       | 263/932 [01:33<04:13,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  28%|██▊       | 264/932 [01:34<04:12,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  28%|██▊       | 265/932 [01:34<04:11,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  29%|██▊       | 266/932 [01:34<04:18,  2.57it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  29%|██▊       | 267/932 [01:35<04:17,  2.58it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  29%|██▉       | 268/932 [01:35<04:16,  2.59it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  29%|██▉       | 269/932 [01:35<04:15,  2.59it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  29%|██▉       | 270/932 [01:36<04:13,  2.61it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  29%|██▉       | 271/932 [01:36<04:12,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  29%|██▉       | 272/932 [01:37<04:12,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  29%|██▉       | 273/932 [01:37<04:12,  2.61it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  29%|██▉       | 274/932 [01:37<04:11,  2.61it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  30%|██▉       | 275/932 [01:38<04:10,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  30%|██▉       | 276/932 [01:38<04:11,  2.61it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  30%|██▉       | 277/932 [01:39<04:10,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  30%|██▉       | 278/932 [01:39<04:10,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  30%|██▉       | 279/932 [01:39<04:08,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  30%|███       | 280/932 [01:40<04:07,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  30%|███       | 281/932 [01:40<04:06,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  30%|███       | 282/932 [01:40<04:06,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  30%|███       | 283/932 [01:41<04:05,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  30%|███       | 284/932 [01:41<04:06,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  31%|███       | 285/932 [01:42<04:04,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  31%|███       | 286/932 [01:42<04:04,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  31%|███       | 287/932 [01:42<04:05,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  31%|███       | 288/932 [01:43<04:06,  2.61it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  31%|███       | 289/932 [01:43<04:05,  2.61it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  31%|███       | 290/932 [01:43<04:03,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  31%|███       | 291/932 [01:44<04:02,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  31%|███▏      | 292/932 [01:44<04:06,  2.60it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  31%|███▏      | 293/932 [01:45<04:03,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  32%|███▏      | 294/932 [01:45<04:01,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  32%|███▏      | 295/932 [01:45<04:00,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  32%|███▏      | 296/932 [01:46<04:00,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  32%|███▏      | 297/932 [01:46<03:59,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  32%|███▏      | 298/932 [01:46<03:58,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  32%|███▏      | 299/932 [01:47<03:58,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  32%|███▏      | 300/932 [01:47<03:57,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  32%|███▏      | 301/932 [01:48<03:58,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  32%|███▏      | 302/932 [01:48<03:58,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  33%|███▎      | 303/932 [01:48<03:57,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  33%|███▎      | 304/932 [01:49<03:56,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  33%|███▎      | 305/932 [01:49<03:55,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  33%|███▎      | 306/932 [01:49<03:53,  2.68it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  33%|███▎      | 307/932 [01:50<03:53,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  33%|███▎      | 308/932 [01:50<03:54,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  33%|███▎      | 309/932 [01:51<03:54,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  33%|███▎      | 310/932 [01:51<03:54,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  33%|███▎      | 311/932 [01:51<03:54,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  33%|███▎      | 312/932 [01:52<03:54,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  34%|███▎      | 313/932 [01:52<03:54,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  34%|███▎      | 314/932 [01:53<03:53,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  34%|███▍      | 315/932 [01:53<03:52,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  34%|███▍      | 316/932 [01:53<03:50,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  34%|███▍      | 317/932 [01:54<03:49,  2.68it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  34%|███▍      | 318/932 [01:54<03:51,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  34%|███▍      | 319/932 [01:54<03:50,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  34%|███▍      | 320/932 [01:55<03:50,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  34%|███▍      | 321/932 [01:55<03:50,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  35%|███▍      | 322/932 [01:56<03:50,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  35%|███▍      | 323/932 [01:56<03:50,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  35%|███▍      | 324/932 [01:56<03:49,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  35%|███▍      | 325/932 [01:57<03:48,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  35%|███▍      | 326/932 [01:57<03:48,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  35%|███▌      | 327/932 [01:57<03:47,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  35%|███▌      | 328/932 [01:58<03:47,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  35%|███▌      | 329/932 [01:58<03:47,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  35%|███▌      | 330/932 [01:59<03:46,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  36%|███▌      | 331/932 [01:59<03:46,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  36%|███▌      | 332/932 [01:59<03:45,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  36%|███▌      | 333/932 [02:00<03:44,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  36%|███▌      | 334/932 [02:00<03:44,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  36%|███▌      | 335/932 [02:00<03:45,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  36%|███▌      | 336/932 [02:01<03:46,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  36%|███▌      | 337/932 [02:01<03:50,  2.58it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  36%|███▋      | 338/932 [02:02<03:52,  2.55it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  36%|███▋      | 339/932 [02:02<03:50,  2.57it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  36%|███▋      | 340/932 [02:02<03:46,  2.61it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  37%|███▋      | 341/932 [02:03<03:45,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  37%|███▋      | 342/932 [02:03<03:43,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  37%|███▋      | 343/932 [02:03<03:41,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  37%|███▋      | 344/932 [02:04<03:40,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  37%|███▋      | 345/932 [02:04<03:44,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  37%|███▋      | 346/932 [02:05<03:41,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  37%|███▋      | 347/932 [02:05<03:40,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  37%|███▋      | 348/932 [02:05<03:39,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  37%|███▋      | 349/932 [02:06<03:37,  2.68it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  38%|███▊      | 350/932 [02:06<03:37,  2.68it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  38%|███▊      | 351/932 [02:06<03:35,  2.69it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  38%|███▊      | 352/932 [02:07<03:35,  2.69it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  38%|███▊      | 353/932 [02:07<03:36,  2.68it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  38%|███▊      | 354/932 [02:08<03:36,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  38%|███▊      | 355/932 [02:08<03:36,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  38%|███▊      | 356/932 [02:08<03:35,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  38%|███▊      | 357/932 [02:09<03:35,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  38%|███▊      | 358/932 [02:09<03:35,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  39%|███▊      | 359/932 [02:09<03:34,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  39%|███▊      | 360/932 [02:10<03:34,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  39%|███▊      | 361/932 [02:10<03:35,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  39%|███▉      | 362/932 [02:11<03:34,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  39%|███▉      | 363/932 [02:11<03:35,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  39%|███▉      | 364/932 [02:11<03:35,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  39%|███▉      | 365/932 [02:12<03:36,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  39%|███▉      | 366/932 [02:12<03:35,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  39%|███▉      | 367/932 [02:13<03:35,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  39%|███▉      | 368/932 [02:13<03:35,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  40%|███▉      | 369/932 [02:13<03:33,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  40%|███▉      | 370/932 [02:14<03:32,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  40%|███▉      | 371/932 [02:14<03:34,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  40%|███▉      | 372/932 [02:14<03:32,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  40%|████      | 373/932 [02:15<03:32,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  40%|████      | 374/932 [02:15<03:31,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  40%|████      | 375/932 [02:16<03:30,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  40%|████      | 376/932 [02:16<03:29,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  40%|████      | 377/932 [02:16<03:30,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  41%|████      | 378/932 [02:17<03:29,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  41%|████      | 379/932 [02:17<03:29,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  41%|████      | 380/932 [02:17<03:28,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  41%|████      | 381/932 [02:18<03:29,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  41%|████      | 382/932 [02:18<03:29,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  41%|████      | 383/932 [02:19<03:28,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  41%|████      | 384/932 [02:19<03:27,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  41%|████▏     | 385/932 [02:19<03:26,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  41%|████▏     | 386/932 [02:20<03:25,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  42%|████▏     | 387/932 [02:20<03:25,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  42%|████▏     | 388/932 [02:20<03:24,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  42%|████▏     | 389/932 [02:21<03:26,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  42%|████▏     | 390/932 [02:21<03:25,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  42%|████▏     | 391/932 [02:22<03:25,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  42%|████▏     | 392/932 [02:22<03:25,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  42%|████▏     | 393/932 [02:22<03:24,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  42%|████▏     | 394/932 [02:23<03:23,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  42%|████▏     | 395/932 [02:23<03:23,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  42%|████▏     | 396/932 [02:24<03:22,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  43%|████▎     | 397/932 [02:24<03:22,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  43%|████▎     | 398/932 [02:24<03:25,  2.60it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  43%|████▎     | 399/932 [02:25<03:22,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  43%|████▎     | 400/932 [02:25<03:21,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  43%|████▎     | 401/932 [02:25<03:20,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  43%|████▎     | 402/932 [02:26<03:19,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  43%|████▎     | 403/932 [02:26<03:18,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  43%|████▎     | 404/932 [02:27<03:18,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  43%|████▎     | 405/932 [02:27<03:17,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  44%|████▎     | 406/932 [02:27<03:18,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  44%|████▎     | 407/932 [02:28<03:17,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  44%|████▍     | 408/932 [02:28<03:16,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  44%|████▍     | 409/932 [02:28<03:15,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  44%|████▍     | 410/932 [02:29<03:14,  2.68it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  44%|████▍     | 411/932 [02:29<03:15,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  44%|████▍     | 412/932 [02:30<03:15,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  44%|████▍     | 413/932 [02:30<03:14,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  44%|████▍     | 414/932 [02:30<03:14,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  45%|████▍     | 415/932 [02:31<03:13,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  45%|████▍     | 416/932 [02:31<03:14,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  45%|████▍     | 417/932 [02:31<03:14,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  45%|████▍     | 418/932 [02:32<03:13,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  45%|████▍     | 419/932 [02:32<03:13,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  45%|████▌     | 420/932 [02:33<03:15,  2.61it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  45%|████▌     | 421/932 [02:33<03:20,  2.55it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  45%|████▌     | 422/932 [02:33<03:18,  2.58it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  45%|████▌     | 423/932 [02:34<03:15,  2.60it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  45%|████▌     | 424/932 [02:34<03:17,  2.58it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  46%|████▌     | 425/932 [02:35<03:14,  2.61it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  46%|████▌     | 426/932 [02:35<03:13,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  46%|████▌     | 427/932 [02:35<03:11,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  46%|████▌     | 428/932 [02:36<03:11,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  46%|████▌     | 429/932 [02:36<03:10,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  46%|████▌     | 430/932 [02:36<03:09,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  46%|████▌     | 431/932 [02:37<03:08,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  46%|████▋     | 432/932 [02:37<03:08,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  46%|████▋     | 433/932 [02:38<03:09,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  47%|████▋     | 434/932 [02:38<03:09,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  47%|████▋     | 435/932 [02:38<03:10,  2.61it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  47%|████▋     | 436/932 [02:39<03:09,  2.61it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  47%|████▋     | 437/932 [02:39<03:09,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  47%|████▋     | 438/932 [02:39<03:07,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  47%|████▋     | 439/932 [02:40<03:06,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  47%|████▋     | 440/932 [02:40<03:05,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  47%|████▋     | 441/932 [02:41<03:04,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  47%|████▋     | 442/932 [02:41<03:04,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  48%|████▊     | 443/932 [02:41<03:02,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  48%|████▊     | 444/932 [02:42<03:03,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  48%|████▊     | 445/932 [02:42<03:03,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  48%|████▊     | 446/932 [02:42<03:02,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  48%|████▊     | 447/932 [02:43<03:01,  2.68it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  48%|████▊     | 448/932 [02:43<03:01,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  48%|████▊     | 449/932 [02:44<03:01,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  48%|████▊     | 450/932 [02:44<03:02,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  48%|████▊     | 451/932 [02:44<03:05,  2.60it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  48%|████▊     | 452/932 [02:45<03:03,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  49%|████▊     | 453/932 [02:45<03:02,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  49%|████▊     | 454/932 [02:45<03:01,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  49%|████▉     | 455/932 [02:46<03:00,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  49%|████▉     | 456/932 [02:46<02:58,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  49%|████▉     | 457/932 [02:47<02:58,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  49%|████▉     | 458/932 [02:47<02:57,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  49%|████▉     | 459/932 [02:47<02:57,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  49%|████▉     | 460/932 [02:48<02:58,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  49%|████▉     | 461/932 [02:48<02:59,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  50%|████▉     | 462/932 [02:48<02:58,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  50%|████▉     | 463/932 [02:49<02:57,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  50%|████▉     | 464/932 [02:49<02:57,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  50%|████▉     | 465/932 [02:50<02:56,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  50%|█████     | 466/932 [02:50<02:56,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  50%|█████     | 467/932 [02:50<02:55,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  50%|█████     | 468/932 [02:51<02:54,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  50%|█████     | 469/932 [02:51<02:53,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  50%|█████     | 470/932 [02:51<02:52,  2.68it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  51%|█████     | 471/932 [02:52<02:52,  2.68it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  51%|█████     | 472/932 [02:52<02:52,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  51%|█████     | 473/932 [02:53<02:52,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  51%|█████     | 474/932 [02:53<02:51,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  51%|█████     | 475/932 [02:53<02:50,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  51%|█████     | 476/932 [02:54<02:50,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  51%|█████     | 477/932 [02:54<02:54,  2.61it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  51%|█████▏    | 478/932 [02:55<02:54,  2.61it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  51%|█████▏    | 479/932 [02:55<02:52,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  52%|█████▏    | 480/932 [02:55<02:52,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  52%|█████▏    | 481/932 [02:56<02:50,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  52%|█████▏    | 482/932 [02:56<02:48,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  52%|█████▏    | 483/932 [02:56<02:47,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  52%|█████▏    | 484/932 [02:57<02:47,  2.68it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  52%|█████▏    | 485/932 [02:57<02:47,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  52%|█████▏    | 486/932 [02:58<02:47,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  52%|█████▏    | 487/932 [02:58<02:47,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  52%|█████▏    | 488/932 [02:58<02:46,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  52%|█████▏    | 489/932 [02:59<02:46,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  53%|█████▎    | 490/932 [02:59<02:46,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  53%|█████▎    | 491/932 [02:59<02:46,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  53%|█████▎    | 492/932 [03:00<02:45,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  53%|█████▎    | 493/932 [03:00<02:46,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  53%|█████▎    | 494/932 [03:01<02:47,  2.61it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  53%|█████▎    | 495/932 [03:01<02:47,  2.61it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  53%|█████▎    | 496/932 [03:01<02:46,  2.61it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  53%|█████▎    | 497/932 [03:02<02:46,  2.61it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  53%|█████▎    | 498/932 [03:02<02:46,  2.61it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  54%|█████▎    | 499/932 [03:02<02:45,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  54%|█████▎    | 500/932 [03:03<02:44,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  54%|█████▍    | 501/932 [03:03<02:43,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  54%|█████▍    | 502/932 [03:04<02:42,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  54%|█████▍    | 503/932 [03:04<02:43,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  54%|█████▍    | 504/932 [03:04<02:47,  2.56it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  54%|█████▍    | 505/932 [03:05<02:48,  2.53it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  54%|█████▍    | 506/932 [03:05<02:46,  2.56it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  54%|█████▍    | 507/932 [03:06<02:44,  2.58it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  55%|█████▍    | 508/932 [03:06<02:42,  2.61it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  55%|█████▍    | 509/932 [03:06<02:40,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  55%|█████▍    | 510/932 [03:07<02:38,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  55%|█████▍    | 511/932 [03:07<02:37,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  55%|█████▍    | 512/932 [03:07<02:37,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  55%|█████▌    | 513/932 [03:08<02:36,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  55%|█████▌    | 514/932 [03:08<02:37,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  55%|█████▌    | 515/932 [03:09<02:36,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  55%|█████▌    | 516/932 [03:09<02:36,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  55%|█████▌    | 517/932 [03:09<02:36,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  56%|█████▌    | 518/932 [03:10<02:35,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  56%|█████▌    | 519/932 [03:10<02:35,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  56%|█████▌    | 520/932 [03:10<02:34,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  56%|█████▌    | 521/932 [03:11<02:33,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  56%|█████▌    | 522/932 [03:11<02:32,  2.68it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  56%|█████▌    | 523/932 [03:12<02:31,  2.70it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  56%|█████▌    | 524/932 [03:12<02:30,  2.71it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  56%|█████▋    | 525/932 [03:12<02:30,  2.70it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  56%|█████▋    | 526/932 [03:13<02:31,  2.69it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  57%|█████▋    | 527/932 [03:13<02:32,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  57%|█████▋    | 528/932 [03:13<02:33,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  57%|█████▋    | 529/932 [03:14<02:32,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  57%|█████▋    | 530/932 [03:14<02:34,  2.61it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  57%|█████▋    | 531/932 [03:15<02:32,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  57%|█████▋    | 532/932 [03:15<02:31,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  57%|█████▋    | 533/932 [03:15<02:31,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  57%|█████▋    | 534/932 [03:16<02:30,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  57%|█████▋    | 535/932 [03:16<02:28,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  58%|█████▊    | 536/932 [03:16<02:28,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  58%|█████▊    | 537/932 [03:17<02:28,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  58%|█████▊    | 538/932 [03:17<02:28,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  58%|█████▊    | 539/932 [03:18<02:27,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  58%|█████▊    | 540/932 [03:18<02:27,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  58%|█████▊    | 541/932 [03:18<02:26,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  58%|█████▊    | 542/932 [03:19<02:26,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  58%|█████▊    | 543/932 [03:19<02:25,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  58%|█████▊    | 544/932 [03:19<02:25,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  58%|█████▊    | 545/932 [03:20<02:25,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  59%|█████▊    | 546/932 [03:20<02:25,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  59%|█████▊    | 547/932 [03:21<02:24,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  59%|█████▉    | 548/932 [03:21<02:24,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  59%|█████▉    | 549/932 [03:21<02:24,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  59%|█████▉    | 550/932 [03:22<02:23,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  59%|█████▉    | 551/932 [03:22<02:23,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  59%|█████▉    | 552/932 [03:22<02:23,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  59%|█████▉    | 553/932 [03:23<02:23,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  59%|█████▉    | 554/932 [03:23<02:23,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  60%|█████▉    | 555/932 [03:24<02:23,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  60%|█████▉    | 556/932 [03:24<02:23,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  60%|█████▉    | 557/932 [03:24<02:25,  2.57it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  60%|█████▉    | 558/932 [03:25<02:24,  2.58it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  60%|█████▉    | 559/932 [03:25<02:23,  2.60it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  60%|██████    | 560/932 [03:26<02:23,  2.60it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  60%|██████    | 561/932 [03:26<02:21,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  60%|██████    | 562/932 [03:26<02:20,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  60%|██████    | 563/932 [03:27<02:19,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  61%|██████    | 564/932 [03:27<02:17,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  61%|██████    | 565/932 [03:27<02:17,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  61%|██████    | 566/932 [03:28<02:16,  2.69it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  61%|██████    | 567/932 [03:28<02:15,  2.68it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  61%|██████    | 568/932 [03:29<02:16,  2.68it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  61%|██████    | 569/932 [03:29<02:15,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  61%|██████    | 570/932 [03:29<02:15,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  61%|██████▏   | 571/932 [03:30<02:15,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  61%|██████▏   | 572/932 [03:30<02:15,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  61%|██████▏   | 573/932 [03:30<02:15,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  62%|██████▏   | 574/932 [03:31<02:15,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  62%|██████▏   | 575/932 [03:31<02:15,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  62%|██████▏   | 576/932 [03:32<02:14,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  62%|██████▏   | 577/932 [03:32<02:13,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  62%|██████▏   | 578/932 [03:32<02:13,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  62%|██████▏   | 579/932 [03:33<02:12,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  62%|██████▏   | 580/932 [03:33<02:12,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  62%|██████▏   | 581/932 [03:33<02:12,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  62%|██████▏   | 582/932 [03:34<02:11,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  63%|██████▎   | 583/932 [03:34<02:13,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  63%|██████▎   | 584/932 [03:35<02:12,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  63%|██████▎   | 585/932 [03:35<02:11,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  63%|██████▎   | 586/932 [03:35<02:10,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  63%|██████▎   | 587/932 [03:36<02:10,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  63%|██████▎   | 588/932 [03:36<02:12,  2.59it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  63%|██████▎   | 589/932 [03:37<02:12,  2.59it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  63%|██████▎   | 590/932 [03:37<02:11,  2.61it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  63%|██████▎   | 591/932 [03:37<02:11,  2.60it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  64%|██████▎   | 592/932 [03:38<02:10,  2.61it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  64%|██████▎   | 593/932 [03:38<02:09,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  64%|██████▎   | 594/932 [03:38<02:08,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  64%|██████▍   | 595/932 [03:39<02:07,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  64%|██████▍   | 596/932 [03:39<02:07,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  64%|██████▍   | 597/932 [03:40<02:06,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  64%|██████▍   | 598/932 [03:40<02:05,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  64%|██████▍   | 599/932 [03:40<02:05,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  64%|██████▍   | 600/932 [03:41<02:04,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  64%|██████▍   | 601/932 [03:41<02:04,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  65%|██████▍   | 602/932 [03:41<02:03,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  65%|██████▍   | 603/932 [03:42<02:03,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  65%|██████▍   | 604/932 [03:42<02:03,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  65%|██████▍   | 605/932 [03:43<02:02,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  65%|██████▌   | 606/932 [03:43<02:02,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  65%|██████▌   | 607/932 [03:43<02:01,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  65%|██████▌   | 608/932 [03:44<02:01,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  65%|██████▌   | 609/932 [03:44<02:03,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  65%|██████▌   | 610/932 [03:44<02:02,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  66%|██████▌   | 611/932 [03:45<02:01,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  66%|██████▌   | 612/932 [03:45<02:00,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  66%|██████▌   | 613/932 [03:46<02:00,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  66%|██████▌   | 614/932 [03:46<01:59,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  66%|██████▌   | 615/932 [03:46<01:59,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  66%|██████▌   | 616/932 [03:47<01:58,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  66%|██████▌   | 617/932 [03:47<01:57,  2.68it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  66%|██████▋   | 618/932 [03:47<01:57,  2.68it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  66%|██████▋   | 619/932 [03:48<01:56,  2.69it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  67%|██████▋   | 620/932 [03:48<01:56,  2.69it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  67%|██████▋   | 621/932 [03:49<01:55,  2.69it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  67%|██████▋   | 622/932 [03:49<01:55,  2.69it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  67%|██████▋   | 623/932 [03:49<01:54,  2.69it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  67%|██████▋   | 624/932 [03:50<01:54,  2.69it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  67%|██████▋   | 625/932 [03:50<01:54,  2.68it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  67%|██████▋   | 626/932 [03:50<01:54,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  67%|██████▋   | 627/932 [03:51<01:54,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  67%|██████▋   | 628/932 [03:51<01:53,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  67%|██████▋   | 629/932 [03:52<01:53,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  68%|██████▊   | 630/932 [03:52<01:53,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  68%|██████▊   | 631/932 [03:52<01:53,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  68%|██████▊   | 632/932 [03:53<01:52,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  68%|██████▊   | 633/932 [03:53<01:51,  2.68it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  68%|██████▊   | 634/932 [03:53<01:51,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  68%|██████▊   | 635/932 [03:54<01:51,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  68%|██████▊   | 636/932 [03:54<01:52,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  68%|██████▊   | 637/932 [03:55<01:52,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  68%|██████▊   | 638/932 [03:55<01:51,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  69%|██████▊   | 639/932 [03:55<01:51,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  69%|██████▊   | 640/932 [03:56<01:50,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  69%|██████▉   | 641/932 [03:56<01:50,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  69%|██████▉   | 642/932 [03:56<01:49,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  69%|██████▉   | 643/932 [03:57<01:48,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  69%|██████▉   | 644/932 [03:57<01:48,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  69%|██████▉   | 645/932 [03:58<01:48,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  69%|██████▉   | 646/932 [03:58<01:47,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  69%|██████▉   | 647/932 [03:58<01:47,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  70%|██████▉   | 648/932 [03:59<01:46,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  70%|██████▉   | 649/932 [03:59<01:46,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  70%|██████▉   | 650/932 [03:59<01:46,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  70%|██████▉   | 651/932 [04:00<01:45,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  70%|██████▉   | 652/932 [04:00<01:45,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  70%|███████   | 653/932 [04:01<01:45,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  70%|███████   | 654/932 [04:01<01:44,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  70%|███████   | 655/932 [04:01<01:44,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  70%|███████   | 656/932 [04:02<01:43,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  70%|███████   | 657/932 [04:02<01:43,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  71%|███████   | 658/932 [04:02<01:43,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  71%|███████   | 659/932 [04:03<01:42,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  71%|███████   | 660/932 [04:03<01:42,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  71%|███████   | 661/932 [04:04<01:41,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  71%|███████   | 662/932 [04:04<01:41,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  71%|███████   | 663/932 [04:04<01:42,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  71%|███████   | 664/932 [04:05<01:42,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  71%|███████▏  | 665/932 [04:05<01:41,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  71%|███████▏  | 666/932 [04:06<01:41,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  72%|███████▏  | 667/932 [04:06<01:40,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  72%|███████▏  | 668/932 [04:06<01:39,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  72%|███████▏  | 669/932 [04:07<01:38,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  72%|███████▏  | 670/932 [04:07<01:38,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  72%|███████▏  | 671/932 [04:07<01:38,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  72%|███████▏  | 672/932 [04:08<01:41,  2.56it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  72%|███████▏  | 673/932 [04:08<01:40,  2.57it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  72%|███████▏  | 674/932 [04:09<01:39,  2.60it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  72%|███████▏  | 675/932 [04:09<01:38,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  73%|███████▎  | 676/932 [04:09<01:37,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  73%|███████▎  | 677/932 [04:10<01:36,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  73%|███████▎  | 678/932 [04:10<01:36,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  73%|███████▎  | 679/932 [04:10<01:36,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  73%|███████▎  | 680/932 [04:11<01:35,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  73%|███████▎  | 681/932 [04:11<01:34,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  73%|███████▎  | 682/932 [04:12<01:34,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  73%|███████▎  | 683/932 [04:12<01:33,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  73%|███████▎  | 684/932 [04:12<01:33,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  73%|███████▎  | 685/932 [04:13<01:32,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  74%|███████▎  | 686/932 [04:13<01:32,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  74%|███████▎  | 687/932 [04:13<01:31,  2.68it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  74%|███████▍  | 688/932 [04:14<01:31,  2.68it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  74%|███████▍  | 689/932 [04:14<01:31,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  74%|███████▍  | 690/932 [04:15<01:31,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  74%|███████▍  | 691/932 [04:15<01:30,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  74%|███████▍  | 692/932 [04:15<01:30,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  74%|███████▍  | 693/932 [04:16<01:29,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  74%|███████▍  | 694/932 [04:16<01:29,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  75%|███████▍  | 695/932 [04:16<01:29,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  75%|███████▍  | 696/932 [04:17<01:29,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  75%|███████▍  | 697/932 [04:17<01:28,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  75%|███████▍  | 698/932 [04:18<01:28,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  75%|███████▌  | 699/932 [04:18<01:28,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  75%|███████▌  | 700/932 [04:18<01:27,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  75%|███████▌  | 701/932 [04:19<01:26,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  75%|███████▌  | 702/932 [04:19<01:26,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  75%|███████▌  | 703/932 [04:19<01:25,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  76%|███████▌  | 704/932 [04:20<01:25,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  76%|███████▌  | 705/932 [04:20<01:24,  2.68it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  76%|███████▌  | 706/932 [04:21<01:24,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  76%|███████▌  | 707/932 [04:21<01:24,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  76%|███████▌  | 708/932 [04:21<01:24,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  76%|███████▌  | 709/932 [04:22<01:23,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  76%|███████▌  | 710/932 [04:22<01:23,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  76%|███████▋  | 711/932 [04:22<01:23,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  76%|███████▋  | 712/932 [04:23<01:23,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  77%|███████▋  | 713/932 [04:23<01:22,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  77%|███████▋  | 714/932 [04:24<01:22,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  77%|███████▋  | 715/932 [04:24<01:22,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  77%|███████▋  | 716/932 [04:24<01:22,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  77%|███████▋  | 717/932 [04:25<01:21,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  77%|███████▋  | 718/932 [04:25<01:20,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  77%|███████▋  | 719/932 [04:26<01:20,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  77%|███████▋  | 720/932 [04:26<01:20,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  77%|███████▋  | 721/932 [04:26<01:19,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  77%|███████▋  | 722/932 [04:27<01:19,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  78%|███████▊  | 723/932 [04:27<01:18,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  78%|███████▊  | 724/932 [04:27<01:17,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  78%|███████▊  | 725/932 [04:28<01:17,  2.68it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  78%|███████▊  | 726/932 [04:28<01:16,  2.68it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  78%|███████▊  | 727/932 [04:29<01:16,  2.68it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  78%|███████▊  | 728/932 [04:29<01:16,  2.68it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  78%|███████▊  | 729/932 [04:29<01:15,  2.68it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  78%|███████▊  | 730/932 [04:30<01:15,  2.68it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  78%|███████▊  | 731/932 [04:30<01:15,  2.68it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  79%|███████▊  | 732/932 [04:30<01:14,  2.68it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  79%|███████▊  | 733/932 [04:31<01:14,  2.68it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  79%|███████▉  | 734/932 [04:31<01:14,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  79%|███████▉  | 735/932 [04:32<01:14,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  79%|███████▉  | 736/932 [04:32<01:13,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  79%|███████▉  | 737/932 [04:32<01:13,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  79%|███████▉  | 738/932 [04:33<01:12,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  79%|███████▉  | 739/932 [04:33<01:12,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  79%|███████▉  | 740/932 [04:33<01:12,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  80%|███████▉  | 741/932 [04:34<01:11,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  80%|███████▉  | 742/932 [04:34<01:12,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  80%|███████▉  | 743/932 [04:35<01:12,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  80%|███████▉  | 744/932 [04:35<01:11,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  80%|███████▉  | 745/932 [04:35<01:11,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  80%|████████  | 746/932 [04:36<01:10,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  80%|████████  | 747/932 [04:36<01:10,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  80%|████████  | 748/932 [04:36<01:09,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  80%|████████  | 749/932 [04:37<01:09,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  80%|████████  | 750/932 [04:37<01:09,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  81%|████████  | 751/932 [04:38<01:09,  2.61it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  81%|████████  | 752/932 [04:38<01:08,  2.61it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  81%|████████  | 753/932 [04:38<01:08,  2.61it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  81%|████████  | 754/932 [04:39<01:07,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  81%|████████  | 755/932 [04:39<01:07,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  81%|████████  | 756/932 [04:40<01:09,  2.54it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  81%|████████  | 757/932 [04:40<01:09,  2.53it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  81%|████████▏ | 758/932 [04:40<01:07,  2.56it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  81%|████████▏ | 759/932 [04:41<01:07,  2.57it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  82%|████████▏ | 760/932 [04:41<01:06,  2.59it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  82%|████████▏ | 761/932 [04:41<01:05,  2.61it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  82%|████████▏ | 762/932 [04:42<01:04,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  82%|████████▏ | 763/932 [04:42<01:04,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  82%|████████▏ | 764/932 [04:43<01:04,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  82%|████████▏ | 765/932 [04:43<01:03,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  82%|████████▏ | 766/932 [04:43<01:03,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  82%|████████▏ | 767/932 [04:44<01:02,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  82%|████████▏ | 768/932 [04:44<01:03,  2.59it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  83%|████████▎ | 769/932 [04:44<01:02,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  83%|████████▎ | 770/932 [04:45<01:02,  2.61it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  83%|████████▎ | 771/932 [04:45<01:03,  2.53it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  83%|████████▎ | 772/932 [04:46<01:02,  2.55it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  83%|████████▎ | 773/932 [04:46<01:01,  2.59it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  83%|████████▎ | 774/932 [04:46<01:00,  2.61it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  83%|████████▎ | 775/932 [04:47<00:59,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  83%|████████▎ | 776/932 [04:47<00:58,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  83%|████████▎ | 777/932 [04:48<00:58,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  83%|████████▎ | 778/932 [04:48<00:57,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  84%|████████▎ | 779/932 [04:48<00:57,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  84%|████████▎ | 780/932 [04:49<00:56,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  84%|████████▍ | 781/932 [04:49<00:56,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  84%|████████▍ | 782/932 [04:49<00:56,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  84%|████████▍ | 783/932 [04:50<00:55,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  84%|████████▍ | 784/932 [04:50<00:55,  2.68it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  84%|████████▍ | 785/932 [04:51<00:54,  2.69it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  84%|████████▍ | 786/932 [04:51<00:54,  2.70it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  84%|████████▍ | 787/932 [04:51<00:53,  2.69it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  85%|████████▍ | 788/932 [04:52<00:53,  2.69it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  85%|████████▍ | 789/932 [04:52<00:53,  2.68it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  85%|████████▍ | 790/932 [04:52<00:53,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  85%|████████▍ | 791/932 [04:53<00:52,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  85%|████████▍ | 792/932 [04:53<00:52,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  85%|████████▌ | 793/932 [04:54<00:52,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  85%|████████▌ | 794/932 [04:54<00:51,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  85%|████████▌ | 795/932 [04:54<00:52,  2.61it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  85%|████████▌ | 796/932 [04:55<00:51,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  86%|████████▌ | 797/932 [04:55<00:51,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  86%|████████▌ | 798/932 [04:55<00:51,  2.61it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  86%|████████▌ | 799/932 [04:56<00:50,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  86%|████████▌ | 800/932 [04:56<00:50,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  86%|████████▌ | 801/932 [04:57<00:49,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  86%|████████▌ | 802/932 [04:57<00:48,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  86%|████████▌ | 803/932 [04:57<00:48,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  86%|████████▋ | 804/932 [04:58<00:48,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  86%|████████▋ | 805/932 [04:58<00:47,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  86%|████████▋ | 806/932 [04:58<00:47,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  87%|████████▋ | 807/932 [04:59<00:46,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  87%|████████▋ | 808/932 [04:59<00:46,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  87%|████████▋ | 809/932 [05:00<00:46,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  87%|████████▋ | 810/932 [05:00<00:45,  2.69it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  87%|████████▋ | 811/932 [05:00<00:45,  2.69it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  87%|████████▋ | 812/932 [05:01<00:44,  2.69it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  87%|████████▋ | 813/932 [05:01<00:44,  2.68it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  87%|████████▋ | 814/932 [05:01<00:44,  2.68it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  87%|████████▋ | 815/932 [05:02<00:43,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  88%|████████▊ | 816/932 [05:02<00:43,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  88%|████████▊ | 817/932 [05:03<00:43,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  88%|████████▊ | 818/932 [05:03<00:42,  2.68it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  88%|████████▊ | 819/932 [05:03<00:42,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  88%|████████▊ | 820/932 [05:04<00:42,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  88%|████████▊ | 821/932 [05:04<00:42,  2.61it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  88%|████████▊ | 822/932 [05:04<00:42,  2.61it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  88%|████████▊ | 823/932 [05:05<00:41,  2.61it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  88%|████████▊ | 824/932 [05:05<00:41,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  89%|████████▊ | 825/932 [05:06<00:40,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  89%|████████▊ | 826/932 [05:06<00:40,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  89%|████████▊ | 827/932 [05:06<00:39,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  89%|████████▉ | 828/932 [05:07<00:39,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  89%|████████▉ | 829/932 [05:07<00:39,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  89%|████████▉ | 830/932 [05:08<00:38,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  89%|████████▉ | 831/932 [05:08<00:38,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  89%|████████▉ | 832/932 [05:08<00:38,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  89%|████████▉ | 833/932 [05:09<00:37,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  89%|████████▉ | 834/932 [05:09<00:37,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  90%|████████▉ | 835/932 [05:09<00:36,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  90%|████████▉ | 836/932 [05:10<00:36,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  90%|████████▉ | 837/932 [05:10<00:36,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  90%|████████▉ | 838/932 [05:11<00:35,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  90%|█████████ | 839/932 [05:11<00:35,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  90%|█████████ | 840/932 [05:11<00:35,  2.58it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  90%|█████████ | 841/932 [05:12<00:35,  2.57it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  90%|█████████ | 842/932 [05:12<00:34,  2.57it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  90%|█████████ | 843/932 [05:13<00:34,  2.60it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  91%|█████████ | 844/932 [05:13<00:33,  2.61it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  91%|█████████ | 845/932 [05:13<00:33,  2.61it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  91%|█████████ | 846/932 [05:14<00:32,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  91%|█████████ | 847/932 [05:14<00:32,  2.58it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  91%|█████████ | 848/932 [05:14<00:32,  2.59it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  91%|█████████ | 849/932 [05:15<00:31,  2.60it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  91%|█████████ | 850/932 [05:15<00:31,  2.61it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  91%|█████████▏| 851/932 [05:16<00:30,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  91%|█████████▏| 852/932 [05:16<00:30,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  92%|█████████▏| 853/932 [05:16<00:30,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  92%|█████████▏| 854/932 [05:17<00:29,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  92%|█████████▏| 855/932 [05:17<00:29,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  92%|█████████▏| 856/932 [05:17<00:28,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  92%|█████████▏| 857/932 [05:18<00:28,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  92%|█████████▏| 858/932 [05:18<00:28,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  92%|█████████▏| 859/932 [05:19<00:27,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  92%|█████████▏| 860/932 [05:19<00:27,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  92%|█████████▏| 861/932 [05:19<00:26,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  92%|█████████▏| 862/932 [05:20<00:26,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  93%|█████████▎| 863/932 [05:20<00:25,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  93%|█████████▎| 864/932 [05:20<00:25,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  93%|█████████▎| 865/932 [05:21<00:25,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  93%|█████████▎| 866/932 [05:21<00:24,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  93%|█████████▎| 867/932 [05:22<00:24,  2.64it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  93%|█████████▎| 868/932 [05:22<00:24,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  93%|█████████▎| 869/932 [05:22<00:24,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  93%|█████████▎| 870/932 [05:23<00:23,  2.61it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  93%|█████████▎| 871/932 [05:23<00:23,  2.61it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  94%|█████████▎| 872/932 [05:24<00:23,  2.60it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  94%|█████████▎| 873/932 [05:24<00:22,  2.59it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  94%|█████████▍| 874/932 [05:24<00:22,  2.56it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  94%|█████████▍| 875/932 [05:25<00:22,  2.58it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  94%|█████████▍| 876/932 [05:25<00:21,  2.60it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  94%|█████████▍| 877/932 [05:25<00:20,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  94%|█████████▍| 878/932 [05:26<00:20,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  94%|█████████▍| 879/932 [05:26<00:20,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  94%|█████████▍| 880/932 [05:27<00:19,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  95%|█████████▍| 881/932 [05:27<00:19,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  95%|█████████▍| 882/932 [05:27<00:18,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  95%|█████████▍| 883/932 [05:28<00:18,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  95%|█████████▍| 884/932 [05:28<00:18,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  95%|█████████▍| 885/932 [05:28<00:17,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  95%|█████████▌| 886/932 [05:29<00:17,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  95%|█████████▌| 887/932 [05:29<00:16,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  95%|█████████▌| 888/932 [05:30<00:16,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  95%|█████████▌| 889/932 [05:30<00:16,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  95%|█████████▌| 890/932 [05:30<00:15,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  96%|█████████▌| 891/932 [05:31<00:15,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  96%|█████████▌| 892/932 [05:31<00:14,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  96%|█████████▌| 893/932 [05:31<00:14,  2.68it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  96%|█████████▌| 894/932 [05:32<00:14,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  96%|█████████▌| 895/932 [05:32<00:13,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  96%|█████████▌| 896/932 [05:33<00:13,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  96%|█████████▌| 897/932 [05:33<00:13,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  96%|█████████▋| 898/932 [05:33<00:12,  2.66it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  96%|█████████▋| 899/932 [05:34<00:12,  2.67it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  97%|█████████▋| 900/932 [05:34<00:12,  2.61it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  97%|█████████▋| 901/932 [05:35<00:11,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  97%|█████████▋| 902/932 [05:35<00:11,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  97%|█████████▋| 903/932 [05:35<00:11,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  97%|█████████▋| 904/932 [05:36<00:10,  2.61it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  97%|█████████▋| 905/932 [05:36<00:10,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  97%|█████████▋| 906/932 [05:36<00:09,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  97%|█████████▋| 907/932 [05:37<00:09,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  97%|█████████▋| 908/932 [05:37<00:09,  2.65it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  98%|█████████▊| 909/932 [05:38<00:08,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  98%|█████████▊| 910/932 [05:38<00:08,  2.63it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  98%|█████████▊| 911/932 [05:38<00:08,  2.62it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  98%|█████████▊| 914/932 [05:39<00:04,  3.93it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  98%|█████████▊| 916/932 [05:39<00:03,  4.57it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  98%|█████████▊| 918/932 [05:40<00:02,  4.96it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  99%|█████████▊| 919/932 [05:40<00:02,  5.05it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  99%|█████████▉| 922/932 [05:40<00:01,  5.17it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  99%|█████████▉| 924/932 [05:41<00:01,  5.28it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  99%|█████████▉| 926/932 [05:41<00:01,  5.27it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions:  99%|█████████▉| 927/932 [05:41<00:00,  5.29it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions: 100%|█████████▉| 930/932 [05:42<00:00,  4.81it/s]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Processing conditions: 100%|██████████| 932/932 [05:42<00:00,  2.72it/s]
+>>> 
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> datetime64[ns]
+>>> 
+>>> Calculating AUCs: 100%|██████████| 932/932 [00:01<00:00, 886.94it/s]
+>>> 
+--- [32] code
+auc_hierarchies
+>>> [0.47615325597278724, 0.4625517768250284]
+--- [33] code
+index = auc_hierarchies.index(max(auc_hierarchies))
+best_result = group_hierarchies[index]
+--- [34] code
+# Save to a pickle file
+with open('dataframes_dict.pkl', 'wb') as handle:
+    pickle.dump(best_result, handle, protocol=pickle.HIGHEST_PROTOCOL)
+--- [35] code
+# Load from a pickle file
+# with open('dataframes_dict.pkl', 'rb') as handle:
+#     loaded_dataframes_dict = pickle.load(handle)
+
+--- [36] markdown
+# **5. Anomaly Detetion** <a class="anchor" id="5"></a>
+
+[Table of Contents](#0.1)
+
+1. label das anomalias
+2. hierarquia fixa, calcular Matrix P
+3. Optimizacao S
+
+Como a Criacao de janelas series temporais relaciona-se com o seguintes:
+Hierarquias
+Detecao de anomalias
+agoritmos genericos
+
+Matrix Profile
+Mais tarde: Pyod (outlier detection)
+
+Distancia minima
+AUC (‘threshold’)
+
+## Ao aumentar o quartile a anomalia restringe aos valores dos eventos com duracao excessiva, apesar da duranca aumentar com o tempo seguindo uma periodicidade semanal
+
+verificar as anomalias serem iguais entre os dois colunas ja que tem o mesmo numero de anomalias do Event Duration and #Events
+--- [37] markdown
+## 5.1 Statistical Thresholding
+--- [38] code
+# def create_features(data, window_size):
+#     X = []
+#     y = []
+#     for i in range(len(data) - window_size):
+#         X.append(data.iloc[i:i+window_size].drop(columns=['Anomaly']).values.flatten())
+#         y.append(data.iloc[i+window_size]['Anomaly'])
+#     return np.array(X), np.array(y)
+
+
+# def plot_confusion_matrix(y_true, y_pred, labels=None, title='Confusion Matrix'):
+#     cm = confusion_matrix(y_true, y_pred, labels=labels)
+#     disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=labels)
+#     disp.plot(cmap=plt.cm.Blues)
+#     plt.title(title)
+#     plt.show()
+    
+    
+# def sliding_window_auc(window_size, df, plot=False):
+#     # Convert TIMESTAMP to datetime and sort
+#     data = df.set_index("TIMESTAMP")
+
+
+#     # Split into train and test sets
+#     X, y = create_features(data, window_size)
+    
+#     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
+#     # Train the Logistic Regression model
+#     model = LogisticRegression(max_iter=1000)
+#     print(X_train.size, y_train.size)
+#     model.fit(X_train, y_train)
+
+#     # Get predicted probabilities for the positive class
+#     probabilities = model.predict_proba(X_test)[:, 1]
+
+#     # Compute AUC
+#     auc_score = roc_auc_score(y_test, probabilities)
+
+#     if plot:
+#         # Use the predictions, not the probabilities, to plot the confusion matrix
+#         y_pred = model.predict(X_test)
+#         plot_confusion_matrix(y_test, y_pred)
+    
+#     return auc_score
+--- [39] code
+# def HTS_auc(aggregated_df, window_size):
+#     auc_scores = {}
+
+#     # Using tqdm to show progress. Wrap the .items() of the dictionary with tqdm.
+#     for leaf_name, df_leaf in tqdm(aggregated_df.items(), desc="Calculating AUCs"):
+#         if df_leaf["Anomaly"].sum() > 0:
+#             auc_score = sliding_window_auc(window_size, df=df_leaf, plot=False)
+#             auc_scores[leaf_name] = auc_score
+
+#     # Calculate the mean AUC score across all DataFrames
+#     auc_score_mean = sum(auc_scores.values()) / len(auc_scores) if auc_scores else 0
+
+#     return auc_score_mean
+
+# HTS_auc(aggregated_df, 24)
+--- [40] markdown
+As hierarquias so entram aqui nesta fase?
+as anomalias agregam, so basta ter um dos valores da juncao positiva para ser anomalia
+
+Amostragem aleatória das hierarquias
+Definir população inicial
+Como fazer as mutações
+
+Genetic Programing
+
+Ex: 
+ > Comocar com 100 aleatorias e avaliamos o fitness (F1 score)
+ > > 100 hieraquias aleatorias
+ > Escolher as 20 melhores e fazer multacoes ate termos uma nova populacao de 100 
+ > Paragem:
+ > > O melhor F1 score da populacao nao aumenta mais que 1%
+ > >
+
+--- [41] code
+

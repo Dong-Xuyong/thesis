@@ -1,0 +1,107 @@
+\section{Literature Review}
+\addtocontents{toc}{\protect\setcounter{tocdepth}{1}}
+
+\subsection{Anomaly Detection in Telecommunications Networks}
+
+Telecommunication anomaly detection is difficult because labels are scarce.
+Moreover, the industry produces large amounts of data, with few viable labels that can be identified as anomalies.
+Often, the problem is not detecting the anomaly but selecting which subsection of the network window to monitor.
+
+\textcite{gonzalez2024one} apply a Dilated Convolutional Variational Autoencoder (DC-\ac{VAE}), a deep model that scores anomalies jointly across several related time series, to mobile-network counters.
+They evaluate it on a fully aggregated view where labels are sparse: of 730{,}000 samples, only 9{,}000 were labeled, using a fixed set of 12 features.
+Range-based F1 (range-F1) measures overlap between predicted and labeled anomaly intervals rather than isolated timestamps; they report a mean range-F1 of around 52\%, which is only modest.
+
+\textcite{burgueno2020online} indicate that the network they analyzed had 25{,}000 mobile base station coverage areas.
+Moreover, for each cell they analyzed 240 hourly \ac{KPI}s, but the study focuses on only 15 of the most important.
+Detection is an online threshold state machine (normal / border / anomalous) run at cell level on that manually selected subset; they report capturing almost 80\% of the labeled network anomalies.
+From this perspective, manual selection is a bottleneck because the 225 unmonitored features may still contain relevant information; for example, anomalies may occur in an unmonitored signal.
+
+Call Detail Records (\ac{CDR}) and mobile activity records are recognized for analysis in telecom monitoring.
+\textcite{sultan2018cdr} report no detection metrics.
+
+\textcite{lemaire2024early} study early detection of urban events from Orange France mobile Network Signalling Data in Paris: cell-level, one-minute counts of network services (calls, SMS, and related signalling).
+They use a Signature detector and hand-designed categorical aggregations over these service types, not temporal aggregation.
+Against a curated set of documented urban events, their best precision is 28.63\%, with event recall of about 36\% at the corresponding operating point, indicating many false alarms even when the signal is useful.
+
+Existing work assumes a fixed aggregation and therefore may miss anomalies that would only appear under a different grouping.
+Automated search is useful when the best aggregation is not obvious in advance; in those papers, there is a fixed review of aggregation, but they do not address how to automate the aggregation of time series.
+The next section will be about this topic.
+
+\subsection{Anomaly Detection in Grouped Time Series}
+
+Anomaly detection in grouped time series treats the detector input as a chosen representation, not the whole network.
+The dataset is aggregated by related features/entities at the aggregation level, rather than treating a network as a flat collection of features.
+It is important because the detection quality is dependent on the aggregation of features, not only the detector.
+Across the reviewed studies, datasets, labels, and metrics differ, so reported scores are not directly comparable.
+
+\textcite{mefleh2025beyond} used an unsupervised Mahalanobis distance approach in a telecommunications setting.
+They report \ac{AUC} rising from 0.77 on the raw \ac{KPI} features to 0.86 when denominator information is included (for example, attempt counts that normalise ratios), then to 0.93 with adjusted ratios, and finally to 0.99 with learned adjustments.
+This result shows that detection quality changes with feature transformation and aggregation.
+
+\textcite{hua2022genad} show that China Mobile wireless base stations share some operational behavior, which GenAD, a generative reconstruction model, can learn and then use to detect anomalies on other stations in the same network.
+GenAD was pre-trained on 3{,}000 unlabeled base stations, using multivariate time series features.
+Their F1 score is 0.953 (precision 0.910).
+That F1 uses point-adjusted segment scoring: if any timestamp inside a labeled anomaly interval is flagged, the whole interval counts as detected, so the score is not a timestamp-wise F1.
+
+In the study by \textcite{oguz2022anomaly}, they simulate a multi-tier network that includes aggregations from the user equipment measurements and classifies the state of each femtocell access point.
+Performance changes with the region of interest (\ac{ROI}) radius, signal shadowing, and aggregation methods.
+At a 30\,m \ac{ROI} with 2\,dB shadowing, the 1D \ac{CNN} achieved 80.1\% accuracy, but as \ac{ROI} size and the shadowing increase, the accuracy decreases, so this shows that including more observations is not necessarily beneficial when added signals are less relevant or noisier.
+
+Based on the reviewed studies, we can extract that grouping can strongly affect anomaly detection performance.
+Although aggregations are selected manually before modeling the relevant \ac{KPI}s, entities, aggregation levels, and spatial boundaries, none of them systematically search for an aggregation structure that best characterizes the anomaly.
+
+\subsection{Anomaly Detection in Hierarchical Time Series}
+
+Hierarchy in anomaly detection is important because an alert such as ``traffic is abnormal'' is not enough for a telecom operator to act on.
+The operator must determine whether it affects the entire network, a region or specific cell of the switch, or only one \ac{KPI} category.
+So this top-down approach helps break down into smaller branches; although that hierarchy is not necessarily the best aggregation for detecting anomalies.
+
+\textcite{hong2012tiresias} detect and localize anomalies in hierarchical \ac{ISP} call-detail data.
+It analyzes customer-care call logs and signaling call records across predefined hierarchies, allowing operators to identify not only that an abnormal behavior occurs but also the level at which it appears.
+They found over 94\% of reference anomalies, and separately reported 99.7\% anomaly identification accuracy.
+These results were obtained from a fixed additive hierarchy and Holt--Winters spike forecasting.
+So the author demonstrates hierarchical localization rather than searching over alternative aggregation structures.
+It does not search for alternative partial aggregations or score non-spike discords, which is the gap addressed by this thesis.
+
+On the other hand, \textcite{wolff2022composite} treat anomaly localization as the sequential search problem of a known tree of processes.
+Instead of measuring every leaf process equally, their hierarchical dynamic search method first samples aggregate internal nodes and then moves towards the branch most likely to contain an anomaly.
+This shows that hierarchy can be an active search space, not merely a reporting structure used after detection.
+However, Wolff assumed tree topology is already known, as search is only within it.
+This differs from our approach, which uses a \ac{GE} to generate candidate aggregations before applying the anomaly scorer.
+
+\textcite{huang2026hydra} propose HYDRA, a multi-level hierarchy-driven anomaly detector that builds several hierarchy-based views of each series and combines detection signals across those levels.
+It ranked first among 40 algorithms across 40 TSB-AD datasets.
+
+\subsection{Matrix Profile and Time-Series Discord Detection}
+
+Chapter~2 defined the Matrix Profile and discords.
+What belongs in this chapter is the published evidence that the scorer is fast enough for many candidate series, and whether it has been used on telecommunications data.
+
+Computational efficiency is substantially improved: a refinery time-series self-join is reduced from an estimate of 153.8 days by brute force to 1.2 hours with STAMP/STOMP \parencite{yeh2017timeseriesjoins}.
+Also, \textcite{zhu2016matrixprofileii} showed GPU-STOMP could process 100 million subsequences in about 12 days, compared to the estimate of 1585 years for brute force.
+STUMPY \parencite{law2019stumpy} gives the practical implementation of this process in Python.
+\textcite{vanonsem2023motif} apply Matrix Profile to production \ac{KPI} series from telecom-provider customers of Skyline Communications (25 series), using it for variable-length \emph{motif} discovery rather than discord scoring.
+They report the method is about 3--8 times faster than VALMOD; an example series yields both a 288-point (about one day) motif and a 12-point (about one hour) motif in a single distance-matrix pass.
+No detection precision, recall, F1, or \ac{AUC} is reported (manual motif checks).
+The series to analyse are chosen in advance, so the paper does not search aggregations.
+
+\subsection{Combinatorial Optimisation for Selecting Time Series}
+
+Little published work searches hierarchical aggregation structures.
+Feature-selection methods are reviewed here instead because, from an optimisation viewpoint, the problems are similar: both search a combinatorial space of candidates and score each one with a fitness function.
+The spaces themselves differ: feature selection chooses a subset of columns, whereas this dissertation searches grammar-constrained hierarchies.
+
+For feature selection, $n$ features give $2^n$ candidate subsets, so exhaustive search is infeasible for large $n$; \textcite{xue2016survey} survey the evolutionary algorithms used for this search, including genetic algorithms, genetic programming, particle swarm optimisation, ant colony optimisation and differential evolution.
+
+\textcite{linares2024evolutionary} use a genetic algorithm (SEISEN) whose fitness is a filter score, the Conditional Dependence Coefficient, to select lagged features for a multilayer perceptron forecaster.
+On an electricity dataset, the feature set falls from 7{,}704 to 3{,}813 while \ac{MAE} improves from 207.193 to 194.400, showing that pruning the input representation can improve accuracy.
+
+\textcite{pietron2025adnev} apply a genetic algorithm at three levels to multivariate time-series anomaly detection: it evolves subsets of input series, an autoencoder architecture for each subset, and the network weights, using validation loss as fitness.
+On four sensor benchmarks (SWaT, WADI, MSL and SMAP), the resulting ensemble achieves the best point-wise F1 of 14 methods, with a mean of 0.70 against 0.54 for the next best, at a cost of up to 132 GPU-hours per dataset.
+
+\textcite{he2021mining} search subspaces of high-dimensional financial transaction series with a greedy heuristic and an evolutionary $(\mu+\lambda)$ algorithm, scoring each candidate by discord mining.
+On real data, greedy search achieves the higher mean average precision (0.86 against 0.72) but is about 15 times slower (1{,}345\,s against 88\,s).
+
+Across these studies, the common pattern is an evolutionary search over a large candidate space with a fitness function evaluated per candidate.
+None searches hierarchical aggregation structures, and none combines the search with a Matrix Profile scorer on telecommunications data; this dissertation does both with grammatical evolution.
+\addtocontents{toc}{\protect\setcounter{tocdepth}{1}}

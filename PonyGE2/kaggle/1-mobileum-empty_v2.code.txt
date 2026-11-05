@@ -1,0 +1,120 @@
+### 1-mobileum-empty_v2.ipynb  cells=21
+--- [0] code
+# This Python 3 environment comes with many helpful analytics libraries installed
+# It is defined by the kaggle/python Docker image: https://github.com/kaggle/docker-python
+# For example, here's several helpful packages to load
+
+import numpy as np # linear algebra
+import pandas as pd # data processing, CSV file I/O (e.g. pd.read_csv)
+
+# Input data files are available in the read-only "../input/" directory
+# For example, running this (by clicking run or pressing Shift+Enter) will list all files under the input directory
+
+import os
+for dirname, _, filenames in os.walk('/kaggle/input'):
+    for filename in filenames:
+        print(os.path.join(dirname, filename))
+
+# You can write up to 20GB to the current directory (/kaggle/working/) that gets preserved as output when you create a version using "Save & Run All" 
+# You can also write temporary files to /kaggle/temp/, but they won't be saved outside of the current session
+>>> /kaggle/input/mobileum-empty-agg/empty_combinations.csv
+>>> /kaggle/input/mobileum-empty-agg/not_empty_combinations.csv
+>>> 
+--- [1] code
+df = pd.read_csv("/kaggle/input/mobileum-empty-agg/empty_combinations.csv", sep=",")
+df1 = pd.read_csv("/kaggle/input/mobileum-empty-agg/not_empty_combinations.csv", sep=",")
+--- [2] code
+len(df)+len(df1)
+>>> 94080
+--- [3] code
+df.describe(include="all")
+>>>        Call Type   Event Type Subscriber Type Traffic Type Service Type  \
+>>> count      92525        92525           92525        92525        92525   
+>>> unique         2            4               5            3            2   
+>>> top          SMS  ROAMING OUT     Application       ON-NET      ROAMING   
+>>> 
+--- [4] code
+df1.describe(include="all")
+>>>        Call Type  Event Type Subscriber Type Traffic Type Service Type  \
+>>> count       1555        1555            1555         1555         1555   
+>>> unique         2           4               5            3            2   
+>>> top        VOICE  ORIGINATED       Roamer In          INT  NOT-ROAMING   
+>>> freq
+--- [5] code
+df1.head()
+>>>   Call Type  Event Type Subscriber Type Traffic Type Service Type  \
+>>> 0       SMS  ORIGINATED        Postpaid      OFF-NET  NOT-ROAMING   
+>>> 1       SMS  ORIGINATED        Postpaid          INT  NOT-ROAMING   
+>>> 2       SMS  ORIGINATED        Postpaid       ON-NET  NOT-ROAMING   
+>>> 3       SMS  ORIGINATED 
+--- [6] markdown
+![image.png](attachment:5645808b-7354-499a-9c3b-060956a40eec.png)
+--- [7] code
+df1.nunique()
+>>> Call Type                      2
+>>> Event Type                     4
+>>> Subscriber Type                5
+>>> Traffic Type                   3
+>>> Service Type                   2
+>>> Partner Description          392
+>>> Number of examples (rows)    699
+>>> dtype: int64
+--- [8] code
+df1[df1["Call Type"]=="SMS"].nunique()
+>>> Call Type                      1
+>>> Event Type                     2
+>>> Subscriber Type                5
+>>> Traffic Type                   3
+>>> Service Type                   1
+>>> Partner Description          361
+>>> Number of examples (rows)    410
+>>> dtype: int64
+--- [9] code
+df1[df1["Call Type"]=="VOICE"].nunique()
+>>> Call Type                      1
+>>> Event Type                     4
+>>> Subscriber Type                5
+>>> Traffic Type                   3
+>>> Service Type                   2
+>>> Partner Description          376
+>>> Number of examples (rows)    431
+>>> dtype: int64
+--- [10] code
+agg = df1.groupby(by=["Call Type", "Event Type","Subscriber Type", "Traffic Type", "Service Type", "Partner Description"]).mean()
+--- [11] code
+agg
+>>>                                                                                     Number of examples (rows)
+>>> Call Type Event Type Subscriber Type Traffic Type Service Type Partner Description                           
+>>> SMS       ORIGINATED Other           INT          NOT-ROAMING  P_0001           
+--- [12] code
+filters = df1.copy()
+--- [13] code
+filters.drop("Number of examples (rows)", axis =1, inplace=True)
+--- [14] code
+filters.to_csv("filters.csv", index=False)
+--- [15] code
+conditions = {"Call Type":"SMS", "Event Type":"ORIGINATED"}
+
+--- [16] code
+def create_query_string(conditions):
+    return " & ".join([f'`{key}` == "{value}"' for key, value in conditions.items()])
+
+
+
+--- [17] code
+
+
+# Create a corrected query string for the sample condition
+query_string = create_query_string(conditions)
+
+# Use the corrected query string to filter the data
+contains_condition= df1.eval(query_string).any()
+
+
+contains_condition
+>>> True
+--- [18] code
+filtered_data
+>>> ERROR NameError: name 'filtered_data' is not defined
+--- [19] code
+df1

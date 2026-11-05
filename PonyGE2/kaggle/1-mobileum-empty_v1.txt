@@ -1,0 +1,100 @@
+cells 8
+--- [0] code
+# This Python 3 environment comes with many helpful analytics libraries installed
+# It is defined by the kaggle/python Docker image: https://github.com/kaggle/docker-python
+# For example, here's several helpful packages to load
+
+import numpy as np # linear algebra
+import pandas as pd # data processing, CSV file I/O (e.g. pd.read_csv)
+
+# Input data files are available in the read-only "../input/" directory
+# For example, running this (by clicking run or pressing Shift+Enter) will list all files under the input directory
+
+import os
+for dirname, _, filenames in os.walk('/kaggle/input'):
+    for filename in filenames:
+        print(os.path.join(dirname, filename))
+
+# You can write up to 20GB to the current directory (/kaggle/working/) that gets preserved as output when you create a version using "Save & Run All" 
+# You can also write temporary files to /kaggle/temp/, but they won't be saved outside of the current session
+>>> /kaggle/input/mobileum-empty-agg/empty_combinations.csv
+>>> /kaggle/input/mobileum-empty-agg/not_empty_combinations.csv
+>>> 
+--- [1] code
+df = pd.read_csv("/kaggle/input/mobileum-empty-agg/empty_combinations.csv", sep=",")
+df1 = pd.read_csv("/kaggle/input/mobileum-empty-agg/not_empty_combinations.csv", sep=",")
+
+--- [2] code
+len(df)+len(df1)
+>>> 94080
+--- [3] code
+df.describe(include="all")
+>>>        Call Type   Event Type Subscriber Type Traffic Type Service Type  \
+>>> count      92525        92525           92525        92525        92525   
+>>> unique         2            4               5            3            2   
+>>> top          SMS  ROAMING OUT     Application       ON-NET      ROAMING   
+>>> freq       46334        23509           18805        31330        47029   
+>>> 
+>>>        Partner Description  
+>>> count                92525  
+>>> unique                 392  
+>>> top                 P_0296  
+>>> freq                   239  
+--- [4] code
+df1.describe(include="all")
+>>>        Call Type  Event Type Subscriber Type Traffic Type Service Type  \
+>>> count       1555        1555            1555         1555         1555   
+>>> unique         2           4               5            3            2   
+>>> top        VOICE  ORIGINATED       Roamer In          INT  NOT-ROAMING   
+>>> freq         849         716            1486         1486         1544   
+>>> mean         NaN         NaN             NaN          NaN          NaN   
+>>> std          NaN         NaN             NaN          NaN          NaN   
+>>> min          NaN         NaN             NaN          NaN          NaN   
+>>> 25%          NaN         NaN             NaN          NaN          NaN   
+>>> 50%          NaN         NaN             NaN          NaN          NaN   
+>>> 75%          NaN         NaN             NaN          NaN          NaN   
+>>> max          NaN         NaN             NaN          NaN          NaN   
+>>> 
+>>>        Partner Description  Number of examples (rows)  
+>>> count                 1555                1555.000000  
+>>> unique                 392                        NaN  
+>>> top                 P_0001                        NaN  
+>>> freq                    65                        NaN  
+>>> mean                   NaN                 613.687460  
+>>> std                    NaN                 768.808891  
+>>> min                    NaN                   1.000000  
+>>> 25%                    NaN                  12.000000  
+>>> 50%                    NaN                 182.000000  
+>>> 75%                    NaN                1185.5000
+--- [5] code
+df1.head()
+>>>   Call Type  Event Type Subscriber Type Traffic Type Service Type  \
+>>> 0       SMS  ORIGINATED        Postpaid      OFF-NET  NOT-ROAMING   
+>>> 1       SMS  ORIGINATED        Postpaid          INT  NOT-ROAMING   
+>>> 2       SMS  ORIGINATED        Postpaid       ON-NET  NOT-ROAMING   
+>>> 3       SMS  ORIGINATED       Roamer In      OFF-NET  NOT-ROAMING   
+>>> 4       SMS  ORIGINATED       Roamer In      OFF-NET  NOT-ROAMING   
+>>> 
+>>>   Partner Description  Number of examples (rows)  
+>>> 0              P_0001                       2110  
+>>> 1              P_0001                       2110  
+>>> 2              P_0001                       2110  
+>>> 3              P_0043                          4  
+>>> 4              P_0044                          7  
+--- [6] code
+df.head()
+>>>   Call Type  Event Type Subscriber Type Traffic Type Service Type  \
+>>> 0       SMS  ORIGINATED        Postpaid      OFF-NET  NOT-ROAMING   
+>>> 1       SMS  ORIGINATED        Postpaid      OFF-NET  NOT-ROAMING   
+>>> 2       SMS  ORIGINATED        Postpaid      OFF-NET  NOT-ROAMING   
+>>> 3       SMS  ORIGINATED        Postpaid      OFF-NET  NOT-ROAMING   
+>>> 4       SMS  ORIGINATED        Postpaid      OFF-NET  NOT-ROAMING   
+>>> 
+>>>   Partner Description  
+>>> 0              P_0002  
+>>> 1              P_0003  
+>>> 2              P_0004  
+>>> 3              P_0005  
+>>> 4              P_0006  
+--- [7] code
+

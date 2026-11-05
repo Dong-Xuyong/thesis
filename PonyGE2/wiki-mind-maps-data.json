@@ -1,0 +1,600 @@
+{
+  "generatedFrom": "C:/Users/Dong/Desktop/Github/PonyGE2-dong/wiki essay/concepts",
+  "conceptCount": 11,
+  "edgeCount": 19,
+  "sections": [
+    {
+      "id": "telecom",
+      "title": "Telecom anomaly detection",
+      "copy": "KPI/CDR anomaly detection with sparse labels and fixed views",
+      "color": "#5b8def",
+      "concepts": [
+        "telecom-anomaly-detection"
+      ],
+      "edgeCount": 0,
+      "subsections": [
+        {
+          "id": "operational-networks",
+          "title": "Operational network monitoring",
+          "concepts": [
+            "telecom-anomaly-detection"
+          ],
+          "edgeCount": 0
+        }
+      ]
+    },
+    {
+      "id": "grouped-ts",
+      "title": "Grouped time series",
+      "copy": "Representation and grouping dominate detector choice",
+      "color": "#3ecf8e",
+      "concepts": [
+        "grouped-time-series"
+      ],
+      "edgeCount": 0,
+      "subsections": [
+        {
+          "id": "aggregation-representation",
+          "title": "Aggregation & representation",
+          "concepts": [
+            "grouped-time-series"
+          ],
+          "edgeCount": 0
+        }
+      ]
+    },
+    {
+      "id": "hierarchical-ts",
+      "title": "Hierarchical time series",
+      "copy": "Multi-level structure for localisation and search",
+      "color": "#f5a623",
+      "concepts": [
+        "hierarchical-time-series"
+      ],
+      "edgeCount": 0,
+      "subsections": [
+        {
+          "id": "hierarchy-search",
+          "title": "Hierarchy & composite search",
+          "concepts": [
+            "hierarchical-time-series"
+          ],
+          "edgeCount": 0
+        }
+      ]
+    },
+    {
+      "id": "matrix-profile",
+      "title": "Matrix Profile & discord",
+      "copy": "Label-free subsequence similarity and discord scoring",
+      "color": "#9a8cff",
+      "concepts": [
+        "matrix-profile",
+        "time-series-discord"
+      ],
+      "edgeCount": 1,
+      "subsections": [
+        {
+          "id": "mp-methods",
+          "title": "Matrix Profile methods",
+          "concepts": [
+            "matrix-profile"
+          ],
+          "edgeCount": 0
+        },
+        {
+          "id": "discord-detection",
+          "title": "Discord detection",
+          "concepts": [
+            "time-series-discord"
+          ],
+          "edgeCount": 0
+        }
+      ]
+    },
+    {
+      "id": "combinatorial-ts",
+      "title": "Combinatorial optimisation (time series)",
+      "copy": "EC search over subsets with fast scorer and AUC fitness",
+      "color": "#ff6b9d",
+      "concepts": [
+        "auc-fitness",
+        "combinatorial-optimisation",
+        "feature-selection"
+      ],
+      "edgeCount": 3,
+      "subsections": [
+        {
+          "id": "structure-search",
+          "title": "Structure & subset search",
+          "concepts": [
+            "combinatorial-optimisation",
+            "feature-selection"
+          ],
+          "edgeCount": 1
+        },
+        {
+          "id": "auc-evaluation",
+          "title": "AUC-based evaluation",
+          "concepts": [
+            "auc-fitness"
+          ],
+          "edgeCount": 0
+        }
+      ]
+    },
+    {
+      "id": "combinatorial-ad",
+      "title": "Combinatorial optimisation (anomaly detection)",
+      "copy": "Anomalies visible in selected subspaces; search + scorer combined",
+      "color": "#ff7f50",
+      "concepts": [
+        "subspace-anomaly-detection"
+      ],
+      "edgeCount": 0,
+      "subsections": [
+        {
+          "id": "subspace-search",
+          "title": "Subspace search",
+          "concepts": [
+            "subspace-anomaly-detection"
+          ],
+          "edgeCount": 0
+        }
+      ]
+    },
+    {
+      "id": "ge-gp",
+      "title": "Genetic programming & grammatical evolution",
+      "copy": "Grammar-generated valid hierarchies; PonyGE2 implements",
+      "color": "#4ecdc4",
+      "concepts": [
+        "genetic-programming",
+        "grammatical-evolution"
+      ],
+      "edgeCount": 1,
+      "subsections": [
+        {
+          "id": "evolutionary-structure",
+          "title": "Evolutionary structure generation",
+          "concepts": [
+            "grammatical-evolution"
+          ],
+          "edgeCount": 0
+        },
+        {
+          "id": "gp-foundation",
+          "title": "GP foundation",
+          "concepts": [
+            "genetic-programming"
+          ],
+          "edgeCount": 0
+        }
+      ]
+    }
+  ],
+  "concepts": {
+    "auc-fitness": {
+      "slug": "auc-fitness",
+      "title": "AUC-Based Fitness Evaluation",
+      "section": "combinatorial-ts",
+      "subsection": "auc-evaluation",
+      "tags": [
+        "evaluation",
+        "auc",
+        "fitness"
+      ],
+      "keys": [
+        "evaluation",
+        "auc",
+        "fitness",
+        "based",
+        "roc",
+        "auroc",
+        "objective",
+        "when",
+        "ranking",
+        "candidate",
+        "models",
+        "structures"
+      ],
+      "desc": "Using ROC-AUC (or AUROC) as the objective when ranking candidate models or structures, especially when labels come from controlled synthetic injection rather than expert annotation.",
+      "related": [
+        "combinatorial-optimisation",
+        "feature-selection",
+        "matrix-profile",
+        "grouped-time-series"
+      ],
+      "path": "C:/Users/Dong/Desktop/Github/PonyGE2-dong/wiki essay/concepts/auc-fitness.md"
+    },
+    "combinatorial-optimisation": {
+      "slug": "combinatorial-optimisation",
+      "title": "Combinatorial Optimisation for Time Series and Anomaly Detection",
+      "section": "combinatorial-ts",
+      "subsection": "structure-search",
+      "tags": [
+        "combinatorial",
+        "optimisation"
+      ],
+      "keys": [
+        "combinatorial",
+        "optimisation",
+        "time",
+        "series",
+        "anomaly",
+        "detection",
+        "selecting",
+        "subsets",
+        "features",
+        "subspaces",
+        "exponentially",
+        "large"
+      ],
+      "desc": "Selecting subsets of features, series, or subspaces from exponentially large search spaces — typically via evolutionary computation, greedy search, or genetic algorithms — with a fast scorer evaluating each candidate.…",
+      "related": [
+        "feature-selection",
+        "subspace-anomaly-detection",
+        "matrix-profile",
+        "auc-fitness",
+        "grammatical-evolution"
+      ],
+      "path": "C:/Users/Dong/Desktop/Github/PonyGE2-dong/wiki essay/concepts/combinatorial-optimisation.md"
+    },
+    "feature-selection": {
+      "slug": "feature-selection",
+      "title": "Evolutionary Feature Selection",
+      "section": "combinatorial-ts",
+      "subsection": "structure-search",
+      "tags": [
+        "combinatorial",
+        "feature-selection"
+      ],
+      "keys": [
+        "combinatorial",
+        "feature",
+        "selection",
+        "evolutionary",
+        "algorithms",
+        "search",
+        "subsets",
+        "input",
+        "features",
+        "time",
+        "series",
+        "optimising"
+      ],
+      "desc": "Using evolutionary algorithms to search subsets of input features or time series, optimising a downstream task metric (forecast error, AUC, detection rate). Search space **2^n** for n features (Xue et al. 2016).…",
+      "related": [
+        "combinatorial-optimisation",
+        "auc-fitness"
+      ],
+      "path": "C:/Users/Dong/Desktop/Github/PonyGE2-dong/wiki essay/concepts/feature-selection.md"
+    },
+    "genetic-programming": {
+      "slug": "genetic-programming",
+      "title": "Genetic Programming",
+      "section": "ge-gp",
+      "subsection": "gp-foundation",
+      "tags": [
+        "genetic-programming",
+        "foundational"
+      ],
+      "keys": [
+        "genetic",
+        "programming",
+        "foundational",
+        "evolutionary",
+        "approach",
+        "evolves",
+        "program",
+        "like",
+        "structures",
+        "trees",
+        "graphs",
+        "directly"
+      ],
+      "desc": "Evolutionary approach that evolves program-like structures (trees, graphs) directly in phenotype space via crossover and mutation, using fitness-proportional selection to solve symbolic regression, control, and search…",
+      "related": [
+        "grammatical-evolution"
+      ],
+      "path": "C:/Users/Dong/Desktop/Github/PonyGE2-dong/wiki essay/concepts/genetic-programming.md"
+    },
+    "grammatical-evolution": {
+      "slug": "grammatical-evolution",
+      "title": "Grammatical Evolution",
+      "section": "ge-gp",
+      "subsection": "evolutionary-structure",
+      "tags": [
+        "grammatical-evolution",
+        "method"
+      ],
+      "keys": [
+        "grammatical",
+        "evolution",
+        "method",
+        "evolutionary",
+        "algorithm",
+        "maps",
+        "variable",
+        "length",
+        "binary",
+        "genotype",
+        "string",
+        "phenotype"
+      ],
+      "desc": "Evolutionary algorithm that maps a variable-length binary/genotype string to a phenotype via a BNF grammar, guaranteeing syntactically valid structures. Decouples search space (genotype) from solution language (grammar).",
+      "related": [
+        "genetic-programming",
+        "combinatorial-optimisation",
+        "hierarchical-time-series",
+        "matrix-profile",
+        "auc-fitness"
+      ],
+      "path": "C:/Users/Dong/Desktop/Github/PonyGE2-dong/wiki essay/concepts/grammatical-evolution.md"
+    },
+    "grouped-time-series": {
+      "slug": "grouped-time-series",
+      "title": "Grouped Time Series Anomaly Detection",
+      "section": "grouped-ts",
+      "subsection": "aggregation-representation",
+      "tags": [
+        "grouped-ts",
+        "anomaly-detection"
+      ],
+      "keys": [
+        "grouped",
+        "anomaly",
+        "detection",
+        "time",
+        "series",
+        "where",
+        "multiple",
+        "related",
+        "cells",
+        "sectors",
+        "base",
+        "stations"
+      ],
+      "desc": "Anomaly detection where multiple related series (cells, sectors, base stations, network services) are analysed together; **how series are grouped and aggregated** strongly affects detectability.",
+      "related": [
+        "telecom-anomaly-detection",
+        "hierarchical-time-series",
+        "auc-fitness"
+      ],
+      "path": "C:/Users/Dong/Desktop/Github/PonyGE2-dong/wiki essay/concepts/grouped-time-series.md"
+    },
+    "hierarchical-time-series": {
+      "slug": "hierarchical-time-series",
+      "title": "Hierarchical Time Series Anomaly Detection",
+      "section": "hierarchical-ts",
+      "subsection": "hierarchy-search",
+      "tags": [
+        "hierarchical-ts",
+        "anomaly-detection"
+      ],
+      "keys": [
+        "hierarchical",
+        "anomaly",
+        "detection",
+        "time",
+        "series",
+        "localisation",
+        "anomalies",
+        "multi",
+        "level",
+        "structure",
+        "network",
+        "region"
+      ],
+      "desc": "Detection and localisation of anomalies using multi-level structure (network → region → cell → KPI), enabling drill-down and composite search over subsets.",
+      "related": [
+        "telecom-anomaly-detection",
+        "grouped-time-series",
+        "combinatorial-optimisation",
+        "grammatical-evolution"
+      ],
+      "path": "C:/Users/Dong/Desktop/Github/PonyGE2-dong/wiki essay/concepts/hierarchical-time-series.md"
+    },
+    "matrix-profile": {
+      "slug": "matrix-profile",
+      "title": "Matrix Profile",
+      "section": "matrix-profile",
+      "subsection": "mp-methods",
+      "tags": [
+        "method",
+        "matrix-profile"
+      ],
+      "keys": [
+        "method",
+        "matrix",
+        "profile",
+        "vector",
+        "where",
+        "normalized",
+        "euclidean",
+        "distance",
+        "subsequence",
+        "starting",
+        "position",
+        "its"
+      ],
+      "desc": "Vector **P** where P[i] = z-normalized Euclidean distance from subsequence starting at position i to its nearest **non-trivial** neighbour in the same (self-join) or paired time series. Companion index vector **I**…",
+      "related": [
+        "time-series-discord",
+        "combinatorial-optimisation",
+        "auc-fitness"
+      ],
+      "path": "C:/Users/Dong/Desktop/Github/PonyGE2-dong/wiki essay/concepts/matrix-profile.md"
+    },
+    "subspace-anomaly-detection": {
+      "slug": "subspace-anomaly-detection",
+      "title": "Subspace Anomaly Detection",
+      "section": "combinatorial-ad",
+      "subsection": "subspace-search",
+      "tags": [
+        "subspace",
+        "anomaly-detection",
+        "combinatorial"
+      ],
+      "keys": [
+        "subspace",
+        "anomaly",
+        "detection",
+        "combinatorial",
+        "anomalies",
+        "visible",
+        "only",
+        "certain",
+        "subsets",
+        "dimensions",
+        "feature",
+        "combinations"
+      ],
+      "desc": "Anomalies that are visible only in certain subsets of dimensions or feature combinations — requiring search over O(2^N) subspaces before scoring.",
+      "related": [
+        "combinatorial-optimisation",
+        "feature-selection"
+      ],
+      "path": "C:/Users/Dong/Desktop/Github/PonyGE2-dong/wiki essay/concepts/subspace-anomaly-detection.md"
+    },
+    "telecom-anomaly-detection": {
+      "slug": "telecom-anomaly-detection",
+      "title": "Telecom Anomaly Detection",
+      "section": "telecom",
+      "subsection": "operational-networks",
+      "tags": [
+        "telecom",
+        "anomaly-detection"
+      ],
+      "keys": [
+        "telecom",
+        "anomaly",
+        "detection",
+        "unsupervised",
+        "weakly",
+        "supervised",
+        "abnormal",
+        "behaviour",
+        "mobile",
+        "network",
+        "operational",
+        "data"
+      ],
+      "desc": "Unsupervised or weakly supervised detection of abnormal behaviour in mobile network operational data — KPIs, CDRs, cell-level signalling — where expert labels are scarce and the choice of monitored view matters.",
+      "related": [
+        "grouped-time-series",
+        "hierarchical-time-series"
+      ],
+      "path": "C:/Users/Dong/Desktop/Github/PonyGE2-dong/wiki essay/concepts/telecom-anomaly-detection.md"
+    },
+    "time-series-discord": {
+      "slug": "time-series-discord",
+      "title": "Time Series Discord",
+      "section": "matrix-profile",
+      "subsection": "discord-detection",
+      "tags": [
+        "method",
+        "discord",
+        "anomaly-detection"
+      ],
+      "keys": [
+        "method",
+        "discord",
+        "anomaly",
+        "detection",
+        "time",
+        "series",
+        "subsequence",
+        "maximum",
+        "distance",
+        "its",
+        "nearest",
+        "non"
+      ],
+      "desc": "The subsequence in a time series with the **maximum distance to its nearest non-self match** — the most anomalous / least repeated pattern (Keogh et al. 2005, Def. 6). Non-self match requires |p − q| ≥ n (subsequence…",
+      "related": [
+        "matrix-profile",
+        "auc-fitness"
+      ],
+      "path": "C:/Users/Dong/Desktop/Github/PonyGE2-dong/wiki essay/concepts/time-series-discord.md"
+    }
+  },
+  "edges": [
+    {
+      "a": "auc-fitness",
+      "b": "combinatorial-optimisation"
+    },
+    {
+      "a": "auc-fitness",
+      "b": "feature-selection"
+    },
+    {
+      "a": "auc-fitness",
+      "b": "grammatical-evolution"
+    },
+    {
+      "a": "auc-fitness",
+      "b": "grouped-time-series"
+    },
+    {
+      "a": "auc-fitness",
+      "b": "matrix-profile"
+    },
+    {
+      "a": "auc-fitness",
+      "b": "time-series-discord"
+    },
+    {
+      "a": "combinatorial-optimisation",
+      "b": "feature-selection"
+    },
+    {
+      "a": "combinatorial-optimisation",
+      "b": "grammatical-evolution"
+    },
+    {
+      "a": "combinatorial-optimisation",
+      "b": "hierarchical-time-series"
+    },
+    {
+      "a": "combinatorial-optimisation",
+      "b": "matrix-profile"
+    },
+    {
+      "a": "combinatorial-optimisation",
+      "b": "subspace-anomaly-detection"
+    },
+    {
+      "a": "feature-selection",
+      "b": "subspace-anomaly-detection"
+    },
+    {
+      "a": "genetic-programming",
+      "b": "grammatical-evolution"
+    },
+    {
+      "a": "grammatical-evolution",
+      "b": "hierarchical-time-series"
+    },
+    {
+      "a": "grammatical-evolution",
+      "b": "matrix-profile"
+    },
+    {
+      "a": "grouped-time-series",
+      "b": "hierarchical-time-series"
+    },
+    {
+      "a": "grouped-time-series",
+      "b": "telecom-anomaly-detection"
+    },
+    {
+      "a": "hierarchical-time-series",
+      "b": "telecom-anomaly-detection"
+    },
+    {
+      "a": "matrix-profile",
+      "b": "time-series-discord"
+    }
+  ]
+}

@@ -1,0 +1,378 @@
+\chapter{Results and Discussion}
+\label{chap:results}
+
+This chapter reports the experimental evaluation of the aggregation hierarchies evolved with \ac{GE}.
+Section~\ref{sec:setup} summarises the experimental configuration.
+Section~\ref{sec:performance} compares the evolved hierarchies with seven fixed aggregation baselines under two scoring schemes.
+Section~\ref{sec:ts-visualisation} illustrates the behaviour of the detector on individual series, Section~\ref{sec:ge-analysis} analyses the search process and the evolved structures, and Section~\ref{sec:discussion} discusses the findings.
+Section~\ref{sec:limitations} closes the chapter with the threats to validity.
+
+\section{Experimental Setup}
+\label{sec:setup}
+
+\subsection{Data, Split and Labels}
+
+The experiments use the hourly \#Events series of the switch data described in Chapter~3, after synthetic anomaly injection (Figure~\ref{fig:workflow}).
+The data is split temporally, without shuffling:
+\begin{itemize}
+    \item \textbf{Training period:} 18 July 2022 00:00 to 14 September 2022 18:00 (1{,}411 hours);
+    \item \textbf{Test period:} 14 September 2022 19:00 to 13 October 2022 21:00 (699 hours).
+\end{itemize}
+For every leaf of a hierarchy, the filtered records are aggregated to an hourly series and aligned to the full hourly range of the split, with missing hours filled with zero.
+Sparse feature combinations therefore become series that are zero for most hours.
+
+Each injected anomaly modifies a single hour: the 168-hour window is only used to estimate the local mean $\mu$ and standard deviation $\sigma$, and the modified value is placed outside $\mu \pm 3\sigma$.
+The labels are therefore \emph{point} anomalies.
+Because each anomaly affects one feature combination, the share of anomalous hours depends on the granularity of the view.
+In the test period it is 4.3\% for the fully aggregated series, between 1.6\% and 2.7\% for the single-category views, 0.8\% on average for the evolved hierarchies and 0.12\% for full disaggregation.
+
+\subsection{Anomaly Scoring and Evaluation Metrics}
+
+Each leaf series is scored with the \ac{MP} computed by STUMPY \parencite{law2019stumpy} with a window of $m = 168$ hours (one week).
+The anomaly score of each hour is the first difference of the matrix profile, min--max normalised to $[0, 1]$.
+Since no complete window exists for the first $m$ hours of a split, these hours are not scored and their labels are ignored.
+
+Two metrics are reported.
+The first, used as fitness during the search, is the event-weighted mean of the leaf \ac{AUC}s:
+\begin{equation}
+    \mathrm{AUC}_{H} = \sum_{\ell \in \mathcal{V}} w_\ell \, \mathrm{AUC}_\ell,
+    \qquad
+    w_\ell = \frac{E_\ell}{\sum_{k \in \mathcal{V}} E_k},
+    \label{eq:weighted-auc}
+\end{equation}
+where $\mathrm{AUC}_\ell$ is the \ac{ROC} \ac{AUC} of leaf $\ell$, $E_\ell$ its total number of events, and $\mathcal{V}$ the set of leaves that contain both normal and anomalous hours after the first $m$ hours.
+Leaves without anomalies are excluded from $\mathcal{V}$, so false alarms raised on them do not affect the metric.
+This is referred to as the \emph{original} metric.
+
+As a robustness check, a \emph{pooled} \ac{AUC} is also computed: the scores and labels of all leaves are concatenated into a single \ac{ROC} curve, so anomaly-free leaves contribute negatives and their false alarms are counted.
+On the same pooled scores, the hours in the top 5\% of scores are flagged as anomalous, and precision, recall and F1 are reported.
+The 5\% threshold matches the injection rate and is deliberately generous given the label rates above.
+
+\subsection{Search Configuration}
+
+The search uses PonyGE2 \parencite{fenton2017} with the grammar \texttt{mobai\_nop.pybnf}, which covers five categorical features (Call, Event, Subscriber, Traffic and Service Type).
+Partner Description is excluded because of its high entropy (8.4 bits, Chapter~\ref{chap:methodology}).
+Table~\ref{tab:ge-config} lists the configuration used in the experimental campaign.
+Population size and number of generations were reduced to 10 and 50 because of the computational budget: each fitness evaluation builds and scores every leaf of a hierarchy.
+Each run took between 13 and 20 minutes with four runs in parallel.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Configuration of the experimental campaign}
+    \label{tab:ge-config}
+    \begin{tabular}{ll}
+        \toprule
+        Parameter & Value \\
+        \midrule
+        Grammar & \texttt{mobai\_nop.pybnf} (5 features) \\
+        Population size & 10 \\
+        Generations & 50 (510 evaluations per run) \\
+        Independent runs & 10 (random seeds 0--9) \\
+        Initialisation & \ac{PIG}, maximum initial depth 5 \\
+        Maximum tree depth & 20 \\
+        Maximum genome length & 500 codons \\
+        Codon size & 100{,}000 \\
+        Selection & Tournament, size 2 \\
+        Crossover & Variable one-point, probability 0.75 \\
+        Mutation & Integer flip per codon \\
+        Replacement & Generational, with elitism \\
+        Fitness & $\mathrm{AUC}_H$ (Equation~\ref{eq:weighted-auc}) on the training period \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+For each run, the best individual of the final generation is evaluated on both periods.
+When a single evolved hierarchy is analysed in detail, the run with the highest \emph{training} fitness is used (seed 7); selecting by test performance would leak information from the test set.
+
+\subsection{Baselines and Statistical Testing}
+
+The evolved hierarchies are compared with seven fixed hierarchies:
+\begin{itemize}
+    \item \textbf{Fully aggregated:} a single series with all traffic;
+    \item \textbf{By Call Type} (2 leaves), \textbf{By Event Type} (4), \textbf{By Subscriber Type} (5), \textbf{By Traffic Type} (3) and \textbf{By Service Type} (2): one split on a single feature;
+    \item \textbf{Fully disaggregated:} the 1{,}555 non-empty feature combinations, including Partner Description.
+\end{itemize}
+The single-feature baselines can also be generated by the grammar, so the search could, in principle, reach them.
+
+The baselines are deterministic and are evaluated once.
+The ten evolved hierarchies are compared with each baseline using a two-sided one-sample Wilcoxon signed-rank test on the differences in test \ac{AUC}.
+With ten runs, the smallest attainable $p$-value is 0.002, which occurs when all ten runs lie on the same side of the baseline.
+
+\section{Performance Analysis}
+\label{sec:performance}
+
+\subsection{Comparison with Fixed Baselines}
+
+Table~\ref{tab:auc-main} and Figures~\ref{fig:auc-baselines-train} and~\ref{fig:auc-baselines-test} report the original metric on the training and test periods.
+The evolved hierarchies reach a test \ac{AUC} of $0.678 \pm 0.066$ (median 0.655, range 0.598--0.778).
+They are significantly better than four baselines: the fully aggregated series and the Call, Event and Service Type splits, by 0.10 to 0.14 \ac{AUC} ($p = 0.002$).
+They are statistically indistinguishable from the Traffic Type split ($p = 0.92$), and worse than the Subscriber Type split ($-0.056$, $p = 0.027$) and full disaggregation ($-0.198$, $p = 0.002$).
+
+\begin{table}[htbp]
+    \centering
+    \caption[ROC-AUC of evolved hierarchies and fixed baselines (original metric)]{\ac{ROC}-\ac{AUC} of the best evolved hierarchy per run and of the fixed baselines, using the event-weighted metric over leaves containing anomalies. For the evolved hierarchies, values are mean $\pm$ standard deviation over 10 runs; $\Delta$ is the mean difference in test \ac{AUC} (evolved minus baseline). The best value of each metric is in bold.}
+    \label{tab:auc-main}
+    \begin{tabular}{lrcccc}
+        \toprule
+        Hierarchy & Leaves & Train AUC & Test AUC & $\Delta$ & Wilcoxon $p$ \\
+        \midrule
+        GE (10 runs) & 8--34 & $0.765 \pm 0.019$ & $0.678 \pm 0.066$ & -- & -- \\
+        Fully aggregated & 1 & 0.601 & 0.543 & $+0.135$ & 0.002 \\
+        By Call Type & 2 & 0.683 & 0.562 & $+0.116$ & 0.002 \\
+        By Event Type & 4 & 0.669 & 0.580 & $+0.098$ & 0.002 \\
+        By Service Type & 2 & 0.642 & 0.574 & $+0.104$ & 0.002 \\
+        By Traffic Type & 3 & 0.614 & 0.684 & $-0.006$ & 0.92 \\
+        By Subscriber Type & 5 & 0.628 & 0.734 & $-0.056$ & 0.027 \\
+        Fully disaggregated & 1{,}555 & \textbf{0.791} & \textbf{0.877} & $-0.198$ & 0.002 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.85\textwidth]{figures/results/auc_vs_baselines_train.png}
+    \caption[Training AUC of evolved hierarchies and fixed baselines]{Training \ac{AUC} (18 July--14 September 2022) of the fixed baselines (grey circles) and distribution of the training \ac{AUC} of the best evolved hierarchy over 10 runs (box plot and red points).}
+    \label{fig:auc-baselines-train}
+\end{figure}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.85\textwidth]{figures/results/auc_vs_baselines_test.png}
+    \caption[Test AUC of evolved hierarchies and fixed baselines]{Test \ac{AUC} (14 September--13 October 2022) of the fixed baselines (blue diamonds) and distribution of the test \ac{AUC} of the best evolved hierarchy over 10 runs (box plot and red points). Rows and horizontal axis are the same as in Figure~\ref{fig:auc-baselines-train}.}
+    \label{fig:auc-baselines-test}
+\end{figure}
+
+Two baselines, Subscriber Type and Traffic Type, score higher on the test period than on the training period.
+The two periods therefore differ in how detectable the injected anomalies are, which is relevant to the generalisation analysis below.
+
+\subsection{Robustness Check: Pooled Scoring}
+
+Table~\ref{tab:pooled} and Figure~\ref{fig:pooled-original} report the pooled metric, in which false alarms on anomaly-free leaves are counted.
+The ranking of the hierarchies changes substantially.
+Full disaggregation drops from 0.877 to 0.600, and its precision among the top 5\% of scores is only 0.4\%: roughly 250 false alarms are raised for each correctly flagged anomalous hour.
+The Subscriber Type split drops from 0.734 to 0.581, while the Event Type and Service Type splits rise to about 0.72.
+
+\begin{table}[htbp]
+    \centering
+    \caption[Pooled ROC-AUC and threshold metrics on the test period]{Pooled \ac{ROC}-\ac{AUC} over all leaf-hours and precision, recall and F1 when the top 5\% of scores are flagged (test period). For the evolved hierarchies, values are means over 10 runs; $p$ is the Wilcoxon signed-rank $p$-value of the difference $\Delta$. The best value of each metric is in bold.}
+    \label{tab:pooled}
+    \begin{tabular}{lcccccc}
+        \toprule
+        Hierarchy & Pooled AUC & $\Delta$ & $p$ & Precision & Recall & F1 \\
+        \midrule
+        GE (10 runs) & $0.670 \pm 0.039$ & -- & -- & 0.050 & 0.308 & 0.086 \\
+        Fully aggregated & 0.543 & $+0.127$ & 0.002 & 0.107 & 0.130 & 0.118 \\
+        By Call Type & 0.510 & $+0.160$ & 0.002 & 0.056 & 0.103 & 0.072 \\
+        By Event Type & 0.715 & $-0.046$ & 0.010 & 0.083 & 0.220 & 0.121 \\
+        By Service Type & \textbf{0.717} & $-0.048$ & 0.010 & 0.074 & 0.154 & 0.100 \\
+        By Traffic Type & 0.690 & $-0.021$ & 0.16 & \textbf{0.125} & \textbf{0.323} & \textbf{0.180} \\
+        By Subscriber Type & 0.581 & $+0.088$ & 0.002 & 0.060 & 0.186 & 0.091 \\
+        Fully disaggregated & 0.600 & $+0.069$ & 0.002 & 0.004 & 0.165 & 0.008 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\textwidth]{figures/results/pooled_vs_original.png}
+    \caption[Original vs pooled test AUC]{Test \ac{AUC} under the original metric (leaves with anomalies only) and the pooled metric (all leaves). Error bars show the standard deviation over the 10 evolved hierarchies.}
+    \label{fig:pooled-original}
+\end{figure}
+
+The mean pooled \ac{AUC} of the evolved hierarchies ($0.670$) is close to their original test \ac{AUC} ($0.678$).
+Under pooled scoring they remain significantly better than the fully aggregated series, the Call and Subscriber Type splits and full disaggregation, are indistinguishable from the Traffic Type split ($p = 0.16$), and are slightly worse than the Event and Service Type splits ($-0.05$, $p = 0.010$).
+The ordering of the runs, however, changes: seeds 6 and 7, the best two runs under the original metric, have the lowest pooled \ac{AUC} (0.606 and 0.623), while seeds 0, 1 and 9 perform best (0.70 to 0.72).
+
+F1 is low for every hierarchy (at most 0.18).
+This follows from the label rates of 0.1\% to 4.3\% of hours and the 5\% threshold, which bounds precision from above, and F1 is therefore not used as the main comparison.
+
+\subsection{Hierarchy Size and Detection Quality}
+
+Figure~\ref{fig:leaves-auc} relates the number of leaf series to the test \ac{AUC}.
+The evolved hierarchies contain between 8 and 34 leaves (19.6 on average).
+Under the original metric, the only hierarchy that clearly outperforms them requires 1{,}555 series.
+Under pooled scoring, however, two single-feature splits with two to four leaves perform as well or slightly better.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.75\textwidth]{figures/results/leaves_vs_auc.png}
+    \caption[Test AUC against number of leaf series]{Test \ac{AUC} (original metric) against the number of leaf series to monitor, on a logarithmic scale.}
+    \label{fig:leaves-auc}
+\end{figure}
+
+\subsection{Generalisation}
+
+Figure~\ref{fig:train-test} compares training and test \ac{AUC}.
+Seven of the ten runs lose between 0.10 and 0.15 \ac{AUC} on the test period, while seeds 6, 7 and 9 hold up (0.76 to 0.78).
+Training fitness is a weak guide to test performance: across runs, the Spearman correlation between training \ac{AUC} and pooled test \ac{AUC} is $-0.27$, and between original and pooled test \ac{AUC} it is $0.20$; neither is significant.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.6\textwidth]{figures/results/train_vs_test.png}
+    \caption[Train vs test AUC]{Training against test \ac{AUC} (original metric) for each evolved hierarchy and baseline. Points below the diagonal lose \ac{AUC} on the test period.}
+    \label{fig:train-test}
+\end{figure}
+
+\section{Time Series Visualisation}
+\label{sec:ts-visualisation}
+
+Figure~\ref{fig:ts-examples} shows the test period for three leaves of the best evolved hierarchy (seed 7) and for the fully aggregated series.
+The three leaves were selected by rank, as the leaves with the best, median and worst leaf \ac{AUC}, rather than chosen for visual appeal.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\textwidth]{figures/results/ts_leaf_examples.png}
+    \caption[Leaf series, labelled anomalies and Matrix Profile scores]{Test period for the best, median and worst leaf of the best evolved hierarchy (seed 7) and for the fully aggregated series. Blue: hourly \#Events; orange: labelled anomalous hours; red: normalised \ac{MP} score ($m = 168$).}
+    \label{fig:ts-examples}
+\end{figure}
+
+\begin{itemize}
+    \item \textbf{Best leaf} (TERMINATED / ON-NET / VOICE / Prepaid, \ac{AUC} 1.00): a high-volume, regular series. The injected value is a clear discord and the score peaks at the labelled hour.
+    \item \textbf{Median leaf} (TERMINATED / INT / Other, \ac{AUC} 0.73): a noisier series in which some anomalies are detected and others are missed.
+    \item \textbf{Worst leaf} (ORIGINATED / VOICE / Roamer In / OFF-NET, \ac{AUC} 0.03): a sparse series with 0 to 4 events per hour. The injected value is indistinguishable from the normal spikes, so the \ac{MP} cannot separate it.
+    \item \textbf{Fully aggregated series} (\ac{AUC} 0.54): many hours are labelled, but each anomaly originates in a small subgroup and is hidden in the total. This illustrates the dilution effect that motivates searching for an intermediate level of aggregation.
+\end{itemize}
+
+Two properties of the scorer are also visible.
+Anomalies in the first week are never scored, because the score starts at hour 168.
+Because the score is a first difference of the matrix profile, it produces a positive spike where a discord begins and a drop where it ends.
+
+\section{Genetic Programming Analysis}
+\label{sec:ge-analysis}
+
+\subsection{Fitness Evolution}
+
+Figure~\ref{fig:fitness} shows the best and average training fitness per generation.
+The mean best fitness rises from 0.710 in the initial population to 0.765 after 50 generations, and the population average from 0.658 to about 0.73.
+Most of the improvement happens in the first eight generations and is followed by long plateaus, as expected for a population of ten individuals with tournament size 2.
+The search had not converged: several runs still improve after generation 40, for example seed 7 at about generation 43.
+More generations would likely increase training fitness, but, given the generalisation gap reported above, not necessarily test performance.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.75\textwidth]{figures/results/fitness_evolution.png}
+    \caption[Fitness evolution]{Best training fitness per generation for each of the 10 runs (faint lines), their mean (solid) and the mean population average (dashed).}
+    \label{fig:fitness}
+\end{figure}
+
+\subsection{Best Evolved Hierarchy}
+
+Figure~\ref{fig:phenotype-tree} shows the hierarchy evolved by seed 7, which has the highest training fitness (0.802; test 0.772).
+It contains 34 leaves, splits first on Event Type, and uses up to five conditions per leaf.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/results/phenotype_tree.png}
+    \caption[Best evolved hierarchy (seed 7)]{Hierarchy evolved by seed 7. Each path from the root to a leaf is a conjunction of filters, with boxes coloured by feature. Leaves are coloured by test \ac{AUC} and sized by their weight $w_\ell$ in Equation~\ref{eq:weighted-auc}; leaves without both classes in the test period are not scored.}
+    \label{fig:phenotype-tree}
+\end{figure}
+
+\begin{itemize}
+    \item The tree is asymmetric: it splits deeply where traffic is heterogeneous (ORIGINATED / VOICE and TERMINATED / INT) and stops early where it is not (ROAMING OUT has a single further split).
+    \item The CALL FORWARD branch yields near-perfect leaves (\ac{AUC} 0.95 to 1.00), but these carry little weight because the volume is concentrated elsewhere.
+    \item The three worst leaves all belong to Roamer In traffic (\ac{AUC} 0.03, 0.12 and 0.41); these are sparse, bursty series of the kind discussed in Section~\ref{sec:ts-visualisation}.
+    \item A single leaf, TERMINATED / ON-NET / SMS, carries 43\% of the weight with an \ac{AUC} of 0.73, so the score of the hierarchy is largely the score of this series.
+    \item Nine of the 34 leaves are not scored in the test period. Seven contain no anomaly at all and two contain an anomaly only in the unscored first week. Their false alarms do not affect the original metric.
+\end{itemize}
+
+\subsection{Structure Across Runs}
+
+Table~\ref{tab:structure} summarises the best hierarchy of each run.
+
+\begin{table}[htbp]
+    \centering
+    \caption[Structure of the best evolved hierarchy per run]{Structure of the best evolved hierarchy per run. Depth is the maximum number of conditions in a leaf; unused features are those of the five grammar features that never appear in a filter. Train, test and pooled test values are \ac{AUC}s.}
+    \label{tab:structure}
+    \begin{tabular}{crcllccc}
+        \toprule
+        Seed & Leaves & Depth & Root split & Unused features & Train & Test & Pooled \\
+        \midrule
+        0 & 15 & 3 & Call Type & Service & 0.760 & 0.658 & 0.720 \\
+        1 & 22 & 4 & Call Type & -- & 0.772 & 0.649 & 0.704 \\
+        2 & 17 & 4 & Call Type & Traffic & 0.766 & 0.631 & 0.659 \\
+        3 & 19 & 5 & Call Type & -- & 0.772 & 0.657 & 0.681 \\
+        4 & 21 & 4 & Call Type & -- & 0.768 & 0.654 & 0.678 \\
+        5 & 8 & 3 & Call Type & Event, Traffic & 0.728 & 0.627 & 0.653 \\
+        6 & 22 & 4 & Event Type & -- & 0.773 & 0.758 & 0.606 \\
+        7 & 34 & 5 & Event Type & -- & 0.802 & 0.772 & 0.623 \\
+        8 & 14 & 4 & Service Type & Traffic & 0.745 & 0.598 & 0.649 \\
+        9 & 24 & 5 & Call Type & -- & 0.761 & 0.778 & 0.724 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\begin{itemize}
+    \item Call Type is the root split in seven of the ten runs. With two values (SMS and VOICE), it is the cheapest first split.
+    \item Every run uses Call Type and Subscriber Type. Traffic Type is absent from the three runs with the lowest test \ac{AUC} (seeds 2, 5 and 8), which, together with the strong Traffic Type baseline, suggests that this feature carries useful structure.
+    \item Leaves use three to five conditions. Five is the maximum by construction: there are five features, and a branch is truncated when a feature repeats along a path. Derivation trees of up to 20 levels therefore collapse to at most five effective levels.
+    \item There is no common best structure. The hierarchies differ widely between runs, yet several reach similar fitness, which indicates a flat fitness landscape with many near-equivalent structures. This favours interpretability, since a readable structure can be chosen among equivalent ones, but limits the stability of the result.
+\end{itemize}
+
+\section{Discussion}
+\label{sec:discussion}
+
+\subsection{Research Objectives}
+
+The objectives in Chapter~1 can be answered as follows.
+
+\begin{itemize}
+    \item \textbf{Can aggregation choice be framed as a combinatorial search over a grammar?}
+    Yes. Every individual that maps successfully is a valid hierarchy, and PonyGE2 found hierarchies with 8 to 34 leaves within 510 evaluations per run.
+    \item \textbf{Can a label-free \ac{MP} scorer drive the search?}
+    Partly. With the detector fixed, the choice of aggregation alone moves the test \ac{AUC} between 0.54 and 0.88 under the original metric, so the scorer clearly discriminates between views. However, the event-weighted fitness can be exploited, as discussed in Section~\ref{sec:metric-sensitivity}.
+    \item \textbf{Do evolved hierarchies outperform fixed aggregation?}
+    They robustly outperform the coarse fixed views (the fully aggregated series and the Call Type split) under both metrics. They do not outperform the best single-feature splits, and whether they outperform full disaggregation depends on the metric.
+\end{itemize}
+
+\subsection{Sensitivity to the Evaluation Metric}
+\label{sec:metric-sensitivity}
+
+The same hierarchies rank differently under the two metrics, which is the main methodological finding of this work.
+Under the original metric, full disaggregation is the best hierarchy (0.877); under pooled scoring it falls below the evolved hierarchies (0.600).
+The reason is the exclusion of anomaly-free leaves from Equation~\ref{eq:weighted-auc}: with 1{,}555 leaves, most leaves contain no anomaly, and the false alarms raised on them are not counted.
+The precision of 0.4\% among the top 5\% of scores shows the operational cost hidden by the original metric.
+
+The same mechanism affects the search.
+Seeds 6 and 7, which score highest under the original metric, score lowest under pooled scoring, which suggests that the fitness rewards hierarchies that concentrate anomalies in a few leaves and leave many normal-only leaves that drop out of the score.
+A fitness that counts false alarms in every leaf, such as the pooled \ac{AUC}, avoids this and is cheap to compute.
+
+\subsection{Generalisation Gap}
+
+The training and test periods behave differently: the Subscriber Type split scores 0.628 on the training period and 0.734 on the test period.
+Because the search optimises the training period only, without a validation split, it selects structures that fit the anomalies injected in that period.
+A validation window or rolling-origin evaluation of the fitness, larger populations, or averaging the fitness over several injection seeds could reduce this gap.
+
+\subsection{Parsimony and Interpretability}
+
+The evolved hierarchies require about 20 monitored series, compared with 1{,}555 for full disaggregation, and under pooled scoring they are also more accurate.
+Each leaf is a readable conjunction of business filters, such as TERMINATED / ON-NET / SMS, so an alert can be traced directly to a traffic segment.
+The contribution of the search is therefore competitive detection with a small, interpretable set of series, found without knowing in advance which feature to split on, rather than the best detection overall.
+
+\subsection{Behaviour of the Matrix Profile Scorer}
+
+The \ac{MP} scorer works well on large, regular series with strong weekly seasonality, reaching leaf \ac{AUC}s of 1.00.
+It fails on sparse integer series, such as the Roamer In leaves.
+A likely cause is that z-normalised subsequences consisting mostly of zeros make every isolated spike look like a discord, so injected and normal spikes cannot be distinguished.
+This supports excluding very sparse feature combinations, for example with a minimum-support rule in the grammar.
+
+\subsection{Relation to Previous Work}
+
+Telecom anomaly detection studies typically evaluate detectors on a fixed view of the data \parencite{gonzalez2024one, mefleh2025beyond, burgueno2020online}.
+The results above show that, with the detector held fixed, the view alone changes the test \ac{AUC} by up to 0.33, which supports treating aggregation as a search problem.
+Hierarchical search \parencite{wolff2022composite} and subspace mining \parencite{he2021mining} also search over structure, but neither uses a grammar or \ac{MP}-based scoring.
+The \ac{MP} literature presents the matrix profile as a strong, parameter-light discord detector \parencite{yeh2017timeseriesjoins}; the present results agree for dense series and add a failure case for sparse ones.
+The \ac{AUC} values reported here are computed on synthetic point anomalies and are not directly comparable with F1 or range-based F1 scores obtained on expert labels in those studies.
+
+\section{Limitations}
+\label{sec:limitations}
+
+\begin{itemize}
+    \item Only synthetic point anomalies are evaluated; real incidents may be longer, collective or contextual.
+    \item A single dataset and a single temporal split are used, without cross-validation over time.
+    \item The search budget is small (population 10, 50 generations, 10 runs) and the search had not converged.
+    \item Partner Description is excluded from the grammar but included in the fully disaggregated baseline, so that comparison is not like-for-like.
+    \item The original fitness ignores false alarms in anomaly-free leaves, and event-volume weighting allows a single leaf to dominate (43\% of the weight for seed 7).
+    \item The 5\% threshold for the threshold metrics is arbitrary relative to label rates of 0.1\% to 4.3\%.
+    \item Labels in the first 168 hours of each split are never scored.
+    \item Only one score definition, the first difference of the matrix profile, was tested; the raw matrix profile and its absolute difference were not compared.
+\end{itemize}

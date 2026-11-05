@@ -1,0 +1,115 @@
+
+\cleardoublepage
+\phantomsection
+\section*{Copyright and terms of use of the work by third parties}
+
+This is an academic work that can be used by third parties as long as internationally accepted rules and good practices are respected with regard to copyright and related rights.
+The work may be used under the terms of the licence below.
+If a use is not covered by that licence, the user should contact the author through the RepositóriUM of the University of Minho.
+
+\noindent\textbf{Licence granted to users of this work}\\
+Attribution-NonCommercial\\
+CC BY-NC\\
+\url{https://creativecommons.org/licenses/by-nc/4.0/}
+
+\cleardoublepage
+\phantomsection
+\section*{Acknowledgements}
+
+Looking back on the work that led to this dissertation, I am deeply grateful to the people whose guidance, support and encouragement made it possible.
+
+My deepest thanks go to my supervisor, Professor Doctor Paulo Alexandre Ribeiro Cortez, who has been a constant source of motivation throughout this research.
+His knowledge, rigour and dedication to academic excellence guided my work at every stage, and I learned a great deal from his teaching and advice during the master's programme and the whole period of this study.
+
+I am also grateful to my co-supervisor, Professor Doctor Emanuel Demétrio Mendes Gouveia, for his insights and encouragement.
+His perspective and feedback were essential in shaping and broadening the scope of this work, and the collaborative atmosphere he fostered contributed greatly to my academic growth.
+
+I also thank the telecommunications operator that made the network data available, without which this study would not have been possible, and the developers of the open-source tools on which this work is built, in particular PonyGE2 and STUMPY.
+
+Finally, I thank my family and friends for their unconditional love, patience and encouragement throughout this journey.
+
+\cleardoublepage
+\phantomsection
+\section*{Statement of integrity}
+
+I hereby declare having conducted this academic work with integrity.
+I confirm that I have not used plagiarism or any form of undue use of information or falsification of results along the process leading to its elaboration.
+I further declare that I have fully acknowledged the Code of Ethical Conduct of the University of Minho.
+
+\cleardoublepage
+\phantomsection
+\section*{Abstract}
+\addcontentsline{toc}{section}{Abstract}
+
+This dissertation focuses on anomaly detection in grouped telecommunications time-series data from a real network.
+Modern telecommunications networks generate large volumes of traffic that must be monitored to detect anomalous behaviour that can affect service reliability, capacity provisioning, and operational decision-making.
+These datasets are structured along several categorical dimensions, which creates many possible aggregation levels and makes it difficult to decide which time series to analyse.
+This work proposes a framework based on hierarchical aggregation structures, with the detector held fixed.
+A single global view or fully disaggregated monitoring is often inadequate: a global view can hide local anomalies, while full disaggregation is costly and can leave many series too sparse for reliable detection.
+Instead, this work explores partial hierarchical structures that may reveal abnormal traffic patterns at a relevant level of detail, aiming to detect anomalies in complex grouped datasets without sacrificing interpretability or incurring prohibitive analytical cost.
+
+A formal grammar automatically generates hierarchical structures.
+Each candidate is scored with the Matrix Profile, and the area under the ROC curve (AUC) of those scores is the fitness of the search.
+In addition to predefined hierarchies, the method can discover useful aggregation structures automatically.
+To this end, Grammatical Evolution (\ac{GE}) \parencite{oneill2001grammatical,oneill2003} is used.
+The main contribution is a reproducible, interpretable framework for searching aggregation structures with a fixed detector for telecommunications time series.
+The evolved hierarchies reached a test AUC of $0.678 \pm 0.066$, roughly 0.10 to 0.14 above the fully aggregated series and the Call, Event, and Service Type splits ($p = 0.002$).
+
+\noindent\textbf{Keywords:} anomaly detection, telecommunications, hierarchical time series, grouped time series, Grammatical Evolution, Matrix Profile.
+
+\cleardoublepage
+\phantomsection
+\section*{Resumo}
+\addcontentsline{toc}{section}{Resumo}
+
+Esta dissertação foca-se na deteção de anomalias em dados de séries temporais agrupadas de telecomunicações provenientes de uma rede real.
+As redes de telecomunicações modernas geram grandes volumes de tráfego que devem ser monitorizados para detetar comportamento anómalo que pode afetar a fiabilidade do serviço, o aprovisionamento de capacidade e a tomada de decisão operacional.
+Estes conjuntos de dados estão estruturados ao longo de várias dimensões categóricas, o que cria muitos níveis de agregação possíveis e dificulta a decisão sobre quais séries temporais analisar.
+Este trabalho propõe um enquadramento baseado em estruturas de agregação hierárquica, mantendo o detetor fixo.
+Uma vista global única ou uma monitorização totalmente desagregada é frequentemente inadequada: uma vista global pode ocultar anomalias locais, enquanto a desagregação total é dispendiosa e pode deixar muitas séries demasiado esparsas para uma deteção fiável.
+Em vez disso, este trabalho explora estruturas hierárquicas parciais que podem revelar padrões anómalos de tráfego a um nível de detalhe relevante, com o objetivo de detetar anomalias em conjuntos de dados agrupados complexos sem sacrificar a interpretabilidade nem incorrer num custo analítico proibitivo.
+
+Uma gramática formal gera automaticamente estruturas hierárquicas.
+Cada candidata é pontuada com o Matrix Profile, e a área sob a curva ROC (AUC) dessas pontuações é a aptidão da procura.
+Para além de hierarquias predefinidas, o método pode descobrir automaticamente estruturas de agregação úteis.
+Para este efeito, recorre-se à Evolução Gramatical (\ac{GE}) \parencite{oneill2001grammatical,oneill2003}.
+A principal contribuição é um enquadramento reproduzível e interpretável para a procura de estruturas de agregação com um detetor fixo em séries temporais de telecomunicações.
+As hierarquias evoluídas atingiram uma AUC de teste de $0{,}678 \pm 0{,}066$, cerca de 0,10 a 0,14 acima da série totalmente agregada e das divisões por Call, Event e Service Type ($p = 0{,}002$).
+
+\noindent\textbf{Palavras-chave:} deteção de anomalias, telecomunicações, séries temporais hierárquicas, séries temporais agrupadas, Evolução Gramatical, Matrix Profile.
+
+\setcounter{tocdepth}{1}
+\tableofcontents
+
+\cleardoublepage
+\phantomsection
+\section*{List of abbreviations and acronyms}
+\addcontentsline{toc}{section}{List of abbreviations and acronyms}
+\begin{acronym}[]
+    \acro{AUC}{\textit{Area Under the ROC Curve}}
+    \acro{BNF}{\textit{Backus--Naur Form}}
+    \acro{CDR}{\textit{Call Detail Record}}
+    \acro{CNN}{\textit{Convolutional Neural Network}}
+    \acro{GA}{\textit{Genetic Algorithm}}
+    \acro{GE}{\textit{Grammatical Evolution}}
+    \acro{GP}{\textit{Genetic Programming}}
+    \acro{ISP}{\textit{Internet Service Provider}}
+    \acro{KPI}{\textit{Key Performance Indicator}}
+    \acro{LSTM}{\textit{Long Short-Term Memory}}
+    \acro{MAE}{\textit{Mean Absolute Error}}
+    \acro{MP}{\textit{Matrix Profile}}
+    \acro{PIG}{\textit{Position-Independent Grow}}
+    \acro{ROC}{\textit{Receiver Operating Characteristic}}
+    \acro{ROI}{\textit{Region of Interest}}
+    \acro{VAE}{\textit{Variational Autoencoder}}
+\end{acronym}
+
+\cleardoublepage
+\phantomsection
+\addcontentsline{toc}{section}{\listfigurename}
+\listoffigures
+
+\cleardoublepage
+\phantomsection
+\addcontentsline{toc}{section}{\listtablename}
+\listoftables

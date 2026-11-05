@@ -1,0 +1,54 @@
+\chapter{Introduction}
+
+\section{Motivation}
+
+Unexpected changes in ordinary traffic patterns can occur at any instant and may result in network faults or quality-of-service problems.
+Telecom traffic is not a single univariate series; it can be viewed under several categorical dimensions.
+For example, a call can have different types, an event type may take many values, and a subscriber may belong to a given type.
+Traffic type, service type, partner-related information, and related categories create many candidate aggregations on which anomaly detection can be run.
+Expert labels for real incidents are scarce, so candidate aggregations cannot be ranked with standard supervised metrics.
+This dissertation focuses on injecting synthetic anomalies into each candidate aggregation and using \ac{AUC} on Matrix Profile discord scores as a label-free fitness signal.
+
+Having a fully aggregated view can hide local anomalies, while monitoring every categorical combination separately is costly computationally and in terms of interpretability.
+Moreover, some fully disaggregated series contain so few events that anomalies cannot be identified with confidence.
+This creates a dilemma: which aggregation level should anomaly detection work on?
+Operators may use a fixed hierarchy or manual rules; for example, aggregating by protocol or subscriber type can make some anomalies visible.
+Running anomaly detection independently on every variable combination, however, remains expensive and hard to interpret.
+Therefore, automatic search methods are needed to identify suitable candidate aggregations.
+
+\section{Objectives}
+
+This dissertation aims to develop a framework for anomaly detection in grouped telecommunications time series with hierarchical aggregation, using Grammatical Evolution to evolve programmes from a formal grammar.
+From a data perspective, the aim is to work with the categorical dimensions of real mobile-network traffic records---call type, event type, subscriber type, traffic type, service type, partner-related information, and related fields---so that anomalies can be studied at global and local aggregation levels.
+
+From a methodological point of view, aggregation choice is framed as a combinatorial search over those categorical dimensions.
+Candidate hierarchies are encoded in a \ac{BNF} grammar so that only valid aggregation structures are generated.
+Grammatical Evolution (PonyGE2) then evolves aggregation programmes from that grammar.
+For each candidate, an aggregated series is built and scored with Matrix Profile (STUMPY) discord distances in a label-free way.
+Because anomaly labels are scarce, synthetic anomalies provide the evaluation signal: \ac{AUC} on the discord scores is used as fitness, and evolved hierarchies are compared with fixed aggregation baselines.
+
+The work is guided by three research questions, which are answered in Chapter~4:
+\begin{enumerate}
+    \item Can the choice of aggregation be framed as a combinatorial search over a grammar, so that every candidate is a valid hierarchy?
+    \item Can a label-free Matrix Profile scorer, evaluated on synthetic anomalies, drive this search?
+    \item Do the evolved hierarchies detect anomalies better than fixed aggregations, such as the fully aggregated series, single-feature splits and full disaggregation?
+\end{enumerate}
+
+\section{Contributions}
+
+The main contributions of this dissertation are:
+\begin{itemize}
+    \item the formulation of aggregation choice for anomaly detection in grouped telecommunications series as a grammar-based search, with a fitness built from a label-free detector and synthetic anomalies;
+    \item an implementation in Python on top of PonyGE2 and STUMPY that evaluates candidate hierarchies on real operator data and can be reproduced from the saved runs;
+    \item an empirical comparison of evolved and fixed hierarchies on a mobile network switch. The evolved hierarchies reached a test \ac{AUC} of $0.678 \pm 0.066$ and were significantly better than the fully aggregated series and the Call, Event and Service Type splits, but not better than the best single-feature splits;
+    \item evidence that conclusions about the best aggregation depend strongly on how false alarms are counted, since the event-weighted fitness ignores leaves without anomalies and can be exploited by the search.
+\end{itemize}
+
+\section{Document Organization}
+
+The dissertation is organised into five chapters.
+Chapter~1 presents the motivation, objectives, research questions, contributions and document organisation.
+Chapter~2 is the background: the bibliographic search, the theory, and the literature review.
+Chapter~3 describes the telecommunications dataset, preprocessing and aggregation, synthetic anomaly injection, hierarchy construction, and the PonyGE2 implementation.
+Chapter~4 presents the experimental results, comparing aggregation strategies and examining the evolved hierarchical structures.
+Chapter~5 summarises the contributions and limitations of the present work, and outlines future work, including the use of real incident labels and online detection.

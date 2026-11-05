@@ -1,0 +1,670 @@
+cells 38
+--- [0] markdown
+<a class="anchor" id="0"></a>
+# **Mubileum Duration Generation with VAE**
+--- [1] markdown
+<a class="anchor" id="0.1"></a>
+# **Table of Contents**
+
+- 1. [Setup](#1)
+- 2. [Data Preparation](#2)
+<!--     - 2.1 [Data Preparation for LSTM](#2.1) -->
+- 3. [EDA](#3)
+- 4. [Anomaly Detection](#4)
+- 5. [Anomaly Creation](#5)
+- 6. [Genetic Algoritm Otimization](#6)
+
+--- [2] markdown
+# **1. SetUp** <a class="anchor" id="1"></a>
+
+[Table of Contents](#0.1)
+--- [3] code
+# Data Manipulation and Analysis
+import numpy as np
+import pandas as pd
+from tqdm import tqdm 
+import random
+
+#Visualization
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# Scikit-Learn for Machine Learning
+from sklearn.model_selection import train_test_split, StratifiedKFold
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import roc_auc_score, confusion_matrix, ConfusionMatrixDisplay
+from sklearn.metrics import precision_recall_curve
+
+
+# Read a CSV file into a Pandas DataFrame
+df = pd.read_csv("/kaggle/input/mobileum/jul_aug_sep_oct_2022_msc_1.csv", sep=";")
+
+# Convert Start Date and Start Hour into a datetime object and set as index
+df['TIMESTAMP'] = pd.to_datetime(df['Start Date'] + ' ' + df['Start Hour'].astype(str), format='%d/%m/%Y %H')
+# df.set_index("TIMESTAMP", inplace=True)
+
+# Clean the #Events column, remove any non-numeric characters, fill NaNs with 0, and convert to integer
+df['#Events'] = df['#Events'].str.replace(r'[^\d.-]', '', regex=True)
+df['#Events'] = df['#Events'].fillna(0)
+df['#Events'] = pd.to_numeric(df['#Events']).astype(int)
+
+# Drop unnecessary columns
+# df.drop(columns=['Datasource', 'Start Date', 'Start Hour'], inplace=True) 
+df.drop(columns=['Datasource', 'Start Date', 'Start Hour', 'Event Duration'], inplace=True)
+
+# Drop duplicates
+df.drop_duplicates(inplace=True)
+# df=df.reset_index()
+--- [4] code
+filters = pd.read_csv("/kaggle/input/mobileum-empty-agg/not_empty_combinations.csv")
+--- [5] code
+def contain_condition(df, conditions):
+    if not conditions:
+        return False
+    pd_conditions = " & ".join([f'`{key}` == "{value}"' for key, value in conditions.items()])
+    return df.eval(pd_conditions).any()
+--- [6] markdown
+# **4. Anomaly Creation** <a class="anchor" id="4"></a>
+
+[Table of Contents](#0.1)
+--- [7] code
+def filter_and_aggregate(df, filter_conditions, hierarchy=False):
+    """
+    Filters the DataFrame based on given conditions and aggregates by summing up a specified column.
+    
+    Args:
+    - df: The original DataFrame.
+    - filter_conditions: A dictionary where keys are column names and values are the values to filter on.
+    
+    Returns:
+    - A new DataFrame with the filtered and aggregated data.
+    """
+    # Apply the filter conditions
+    df_fil = df.copy()
+    
+    for col, val in filter_conditions.items():
+        df_fil = df_fil[df_fil[col] == val]
+    
+    # Drop the columns used for filtering
+    df_fil.drop(columns=list(filter_conditions.keys()), inplace=True)
+    
+    # Group by 'TIMESTAMP' and sum up the '#Events' column
+    if hierarchy:
+        df_agg = df_fil.groupby('TIMESTAMP')[['#Events','Anomaly']].sum().reset_index()
+    else:
+        df_agg = df_fil.groupby('TIMESTAMP')['#Events'].sum().reset_index()
+    
+    return df_agg
+
+--- [8] code
+def generate_anomaly(mean, std, lower_bound=0):
+    """
+    Generate a random anomaly value.
+    
+    Parameters:
+    mean (float): The mean value of the normal data.
+    std (float): The standard deviation of the normal data.
+    lower_bound (int): The minimum value an anomaly can take, inclusive. Default is 0.
+    
+    Returns:
+    int: An anomalous data point.
+    """
+    print(mean, std)
+    upper_normal = mean + 3 * std
+    lower_normal = max(mean - (3 * std), lower_bound)
+    
+    
+    # Choose between an anomaly below or above the normal range.
+    anomaly_value = np.random.choice([upper_normal, lower_normal])
+    return anomaly_value
+
+--- [9] code
+def insert_anomaly(df, df_anomaly, index, unique_conditions, plot=False):
+    # Identify time-stamp at the given index
+    ts = df_anomaly.iloc[index]['TIMESTAMP']
+    
+    # Define window for calculating std and mean
+    start = max(index - 84, 0)
+    end = min(index + 83, len(df_anomaly) - 1)
+    
+    print(start, end)
+    print(ts)
+    # Calculate standard deviation and mean within the window and if the window is equal to 1
+    if start != end:
+        std = df_anomaly[start:end]['#Events'].std()
+        mean = df_anomaly[start:end]['#Events'].mean()
+        anomaly_value = generate_anomaly(mean, std)
+    else:
+        value = std= mean = df_anomaly.iloc[start]['#Events']
+
+        anomaly_value = np.random.choice([max(value-value/2,0), value*3/2])
+    
+
+    
+    mask = (df['TIMESTAMP'] == ts)
+
+    # Apply additional conditions from dictionary of conditions
+    for col, val in unique_conditions.items():
+        mask &= (df[col] == val)
+
+    # This mask can now be used to filter df
+    rows_with_ts = df[mask]
+
+    # Sum of '#Events' for these rows
+    sum_events = rows_with_ts['#Events'].sum()
+
+    # Calculate multiplier
+    m = anomaly_value / sum_events
+
+    # Check if the 'Anomaly' column exists
+    if 'Anomaly' not in df.columns:
+        df['Anomaly'] = 0
+    
+    print(len(df.loc[mask, '#Events']))
+    print(df.loc[mask, '#Events'])
+    # Apply multiplier and round to integer values
+    df.loc[mask, '#Events'] = (rows_with_ts['#Events'] * m).round().astype(int)
+    print(df.loc[mask, '#Events'])
+    # Update 'Anomaly' column only for rows where '#Events' 
+    df.loc[mask, 'Anomaly'] = 1
+    
+    
+    if plot == True:
+#         print(f"Anomaly value: {anomaly_value}")
+        plt.figure(figsize=(10, 6))
+        plt.plot(df_original["TIMESTAMP"], df_original["#Events"], label="Events", marker='o', linestyle='-', markersize=4)
+        plt.scatter(ts, anomaly_value, color='red', s=100, label='Anomaly', zorder=5)
+        plt.xlabel('TIMESTAMP')
+        plt.ylabel('#Events')
+        plt.title('Visualization of #Events with Anomaly Inserted')
+        plt.legend()
+        plt.grid(True)
+        plt.show()
+
+    
+    # Print actual and anomaly values
+    actual_value = df_anomaly.iloc[index]['#Events']
+    anomaly_value_df = df.loc[mask, '#Events'].sum()
+#     print("actual_value:", actual_value, "Anomaly_value:", anomaly_value,"Anomaly_value_df:", anomaly_value_df, "Mean:", mean, "Std:", std)
+    
+    return ts, mean, std, anomaly_value, anomaly_value_df, actual_value, unique_conditions
+--- [10] code
+def insert_nanomaly(df, n_anomalies, plot=False):
+    
+    columns = ['Call Type', 'Event Type', 'Subscriber Type', 'Traffic Type', 'Service Type', 'Partner Description']
+    
+    # Store anomalies for plotting
+    anomaly_records = []
+    
+    # Store unique conditions to ensure they are not repeated
+    used_conditions = set()
+    
+    df_anomaly = df.copy()
+    
+    # Check if the 'Anomaly' column exists
+    if 'Anomaly' not in df_anomaly.columns:
+        df_anomaly['Anomaly'] = 0
+    
+    for _ in tqdm(range(n_anomalies), desc='Inserting anomalies'):
+            while True:
+                # Ensure that the same new_columns and unique_conditions are not generated again
+                new_columns = [col for col in columns if random.random() < 0.5]
+                unique_conditions = {col: random.choice(df[col].unique()) for col in new_columns}
+                conditions_tuple = tuple(sorted(unique_conditions.items()))  # Need to convert to a hashable type to store in a set
+
+                if conditions_tuple not in used_conditions:
+                    
+
+                    # Retry if df_fil is empty, otherwise, break the loop
+                    if contain_condition(filters, unique_conditions):
+                        df_fil = filter_and_aggregate(df, unique_conditions)
+                        used_conditions.add(conditions_tuple)
+                        index = random.choice(df_fil.index)
+                        ts, mean, std, anomaly_value, anomaly_value_df, actual_value, conditions = insert_anomaly(df_anomaly, df_fil, index, unique_conditions, plot=False)
+                        anomaly_records.append((ts, mean, std, anomaly_value, anomaly_value_df, actual_value, conditions))
+                        break  # Successfully inserted an anomaly, can exit loop
+                    else:
+                        print("This aggregation is empty, retrying with new unique conditions.")
+    
+    
+    anomalies_info_df = pd.DataFrame(anomaly_records, columns=['TIMESTAMP', 'Mean', 'STD', 'Anomaly Value', 'Anomaly Value from DF', 'Actual Value', 'Used Conditions'])
+    aux= filter_and_aggregate(df_anomaly, {}, True)
+    # Merge dataframes based on timestamp
+    mask = aux["TIMESTAMP"].isin(anomalies_info_df["TIMESTAMP"])
+    filtered_aux = aux[mask]
+
+    if plot:
+        plt.figure(figsize=(10, 6))
+        plt.plot(aux["TIMESTAMP"], aux["#Events"], label="Events", marker='o', linestyle='-', markersize=4)
+
+        # Extract timestamps and anomaly values for plotting
+#         ts_values, anomaly_values = zip(*anomaly_records) if anomaly_records else ([], [])
+        plt.scatter(filtered_aux["TIMESTAMP"], filtered_aux["#Events"], color='red', s=100, label='Anomaly', zorder=5)
+
+        plt.xlabel('TIMESTAMP')
+        plt.ylabel('#Events')
+        plt.title('Visualization of #Events with Anomaly Inserted')
+        plt.legend()
+        plt.grid(True)
+        plt.show()
+    
+#     ?<create a dataframe which store the (ts, mean, std, anomaly_value, anomaly_value_df, actual_value and used_conditions)
+    
+
+    # Optional: print out the anomaly records for debugging
+#     print(anomaly_records)
+    
+    return df_anomaly, anomalies_info_df
+
+--- [11] markdown
+1. get the anomaly_value and the ts with the function. 
+2. go to the original df get all the rows with the same ts (TIMESTAMP)
+3. from all the row calculate the sum of column (#Events)
+4. calculate the multiplier witch m = anomaly_value/ sum of column (#Events)
+5. use the multiplier to all rows of the #Events and do the round to get int
+6. Create an new columns witch name "Anomaly" with 0 or 1, which all row which has column 
+7. gerate an orignal and modified df
+--- [12] code
+df_anomaly, df_info = insert_nanomaly(df, 50, plot=True)
+>>> Inserting anomalies:   0%|          | 0/5 [00:00<?, ?it/s]
+>>> This aggregation is empty, retrying with new unique conditions.
+>>> 1962 2109
+>>> 2022-10-11 06:00:00
+>>> 211488.6598639456 117910.56401558155
+>>> 154
+>>> 927225     3
+>>> 927226     9
+>>> 927227    12
+>>> 927228     1
+>>> 927229     1
+>>>           ..
+>>> 927658     6
+>>> 927659     3
+>>> 927660     7
+>>> 927661     1
+>>> 927662     9
+>>> Name: #Events, Length: 154, dtype: int64
+>>> 927225     9
+>>> 927226    28
+>>> 927227    38
+>>> 927228     3
+>>> 927229     3
+>>>           ..
+>>> 927658    19
+>>> 927659     9
+>>> 927660    22
+>>> 927661     3
+>>> 927662    28
+>>> Name: #Events, Length: 154, dtype: int64
+>>> 
+>>> Inserting anomalies:  20%|██        | 1/5 [00:01<00:04,  1.00s/it]
+>>> This aggregation is empty, retrying with new unique conditions.
+>>> 1990 2109
+>>> 2022-10-12 10:00:00
+>>> 247581.8151260504 135481.17558220043
+>>> 
+>>> Inserting anomalies:  40%|████      | 2/5 [00:02<00:04,  1.45s/it]
+>>> 482
+>>> 940791       1
+>>> 940792      75
+>>> 940793     320
+>>> 940794       8
+>>> 940795    1035
+>>>           ... 
+>>> 941308       2
+>>> 941309     178
+>>> 941310      10
+>>> 941311       1
+>>> 941312       2
+>>> Name: #Events, Length: 482, dtype: int64
+>>> 940791       2
+>>> 940792     125
+>>> 940793     535
+>>> 940794      13
+>>> 940795    1730
+>>>           ... 
+>>> 941308       3
+>>> 941309     297
+>>> 941310      17
+>>> 941311       2
+>>> 941312       3
+>>> Name: #Events, Length: 482, dtype: int64
+>>> 521 657
+>>> 2022-10-08 09:00:00
+>>> 2.2058823529411766 1.9249536677784436
+>>> 
+>>> Inserting anomalies:  60%|██████    | 3/5 [00:04<00:02,  1.43s/it]
+>>> 1
+>>> 895796    1
+>>> Name: #Events, dtype: int64
+>>> 895796    0
+>>> Name: #Events, dtype: int64
+>>> 251 418
+>>> 2022-08-23 11:00:00
+>>> 2.125748502994012 1.572273469877003
+>>> 
+>>> Inserting anomalies:  80%|████████  | 4/5 [00:05<00:01,  1.25s/it]
+>>> 2
+>>> 386230    1
+>>> 386406    1
+>>> Name: #Events, dtype: int64
+>>> 386230    0
+>>> 386406    0
+>>> Name: #Events, dtype: int64
+>>> This aggregation is empty, retrying with new unique conditions.
+>>> 0 124
+>>> 2022-08-26 11:00:00
+>>> 2.2580645161290325 1.983144287261144
+>>> 
+>>> Inserting anomalies: 100%|██████████| 5/5 [00:06<00:00,  1.30s/it]
+>>> 1
+>>> 419374    5
+>>> Name: #Events, dtype: int64
+>>> 419374    8
+>>> Name: #Events, dtype: int64
+>>> 
+>>> 
+>>> 
+>>> <Figure size 1000x600 with 1 Axes>
+--- [13] code
+df_info
+>>>             TIMESTAMP           Mean            STD  Anomaly Value  \
+>>> 0 2022-10-11 06:00:00  211488.659864  117910.564016  565220.351911   
+>>> 1 2022-10-12 10:00:00  247581.815126  135481.175582  654025.341873   
+>>> 2 2022-10-08 09:00:00       2.205882       1.924954       0.000000   
+>>> 3 2022-08-23 11:00:00       2.125749       1.572273       0.000000   
+>>> 4 2022-08-26 11:00:00       2.258065       1.983144       8.207497   
+>>> 
+>>>    Anomaly Value from DF  Actual Value  \
+>>> 0                 565213        179317   
+>>> 1                 654029        391349   
+>>> 2                      0             1   
+>>> 3                      0             2   
+>>> 4                      8             5   
+>>> 
+>>>                                      Used Conditions  
+>>> 0                       {'Event Type': 'ORIGINATED'}  
+>>> 1  {'Traffic Type': 'INT', 'Service Type': 'NOT-R...  
+>>> 2  {'Event Type': 'TERMINATED', 'Service Type': '...  
+>>> 3  {'Call Type': 'VOICE', 'Partner Description': ...  
+>>> 4  {'Call Type': 'SMS', 'Partner Description': 'P...  
+--- [14] code
+size = len(df[df["#Events"] != df_anomaly["#Events"]])
+print(f"Size of number o anomalies inserted into desaggregated df: {size}")
+>>> Size of number o anomalies inserted into desaggregated df: 640
+>>> 
+--- [15] markdown
+## Number of examples (rows) on aggreagated with all features with return not an empty dataframe
+--- [16] code
+row_plus_two = len(filters[filters["Number of examples (rows)"]>2])
+row_equal_two = len(filters[filters["Number of examples (rows)"]==2])
+row_one = len(filters[filters["Number of examples (rows)"]==1])
+
+print(f"Dataframe with more than 2 rows: {row_plus_two}\nDataframe with 2 rows: {row_equal_two}\nDataframe with one row: {row_one} ")
+>>> Dataframe with more than 2 rows: 1374
+>>> Dataframe with 2 rows: 54
+>>> Dataframe with one row: 127 
+>>> 
+--- [17] markdown
+### Selecting one df_anomaly and analysis how this affect global and locally on the dataset
+--- [18] code
+index = np.random.choice(range(len(df_info)-1))
+center_ts = df_info.iloc[index]["TIMESTAMP"]
+condictions = df_info.iloc[index]["Used Conditions"]
+(index, center_ts, condictions)
+>>> (2,
+>>>  Timestamp('2022-10-08 09:00:00'),
+>>>  {'Event Type': 'TERMINATED',
+>>>   'Service Type': 'NOT-ROAMING',
+>>>   'Partner Description': 'P_0290'})
+--- [19] markdown
+### Random select one anomaly from generated anomalies
+--- [20] code
+index = np.random.choice(range(len(df_info)-1))
+center_ts = df_info.iloc[index]["TIMESTAMP"]
+conditions = df_info.iloc[index]["Used Conditions"]
+static_value = list(conditions.values())[0]
+column = list(conditions.keys())[0]
+print(f" INDEX = {index} \n timestamp Selected: {center_ts} \n Conditions: {conditions} \n FIX filter: {static_value} => {column}")
+>>>  INDEX = 1 
+>>>  timestamp Selected: 2022-10-12 10:00:00 
+>>>  Conditions: {'Traffic Type': 'INT', 'Service Type': 'NOT-ROAMING'} 
+>>>  FIX filter: INT => Traffic Type
+>>> 
+--- [21] code
+## Reducing the redundancy to with number of rows equals 2110
+filters_fil =filters[(filters[column]==static_value) &(filters["Number of examples (rows)"]==2110)]
+
+## Remove all columns with unique values
+rm_columns = list(filters_fil.columns[filters_fil.nunique() == 1])
+
+new_filters = filters_fil.drop(rm_columns, axis = 1)
+index = np.random.choice(len(new_filters)-1)
+plot_filters = new_filters.iloc[index].values
+print(f"Df after filtering {column} => {static_value} : \n{filters_fil}")
+print(f"After removing all columns with unique values: \n{new_filters}")
+print(f"Columns with unique values: {rm_columns}")
+print(f"New filters to use in plot: {plot_filters}")
+>>> Df after filtering Traffic Type => INT : 
+>>>      Call Type   Event Type Subscriber Type Traffic Type Service Type  \
+>>> 1          SMS   ORIGINATED        Postpaid          INT  NOT-ROAMING   
+>>> 167        SMS   ORIGINATED       Roamer In          INT  NOT-ROAMING   
+>>> 323        SMS   ORIGINATED         Prepaid          INT  NOT-ROAMING   
+>>> 329        SMS   TERMINATED        Postpaid          INT  NOT-ROAMING   
+>>> 338        SMS   TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> ...        ...          ...             ...          ...          ...   
+>>> 1211     VOICE   TERMINATED        Postpaid          INT  NOT-ROAMING   
+>>> 1364     VOICE   TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> 1373     VOICE   TERMINATED       Roamer In          INT  NOT-ROAMING   
+>>> 1536     VOICE   TERMINATED         Prepaid          INT  NOT-ROAMING   
+>>> 1553     VOICE  ROAMING OUT           Other          INT      ROAMING   
+>>> 
+>>>      Partner Description  Number of examples (rows)  
+>>> 1                 P_0001                       2110  
+>>> 167               P_0164                       2110  
+>>> 323               P_0001                       2110  
+>>> 329               P_0001                       2110  
+>>> 338               P_0002                       2110  
+>>> ...                  ...                        ...  
+>>> 1211              P_0001                       2110  
+>>> 1364              P_0154                       2110  
+>>> 1373              P_0164                       2110  
+>>> 1536              P_0001                 
+--- [22] code
+df_anomaly_filters = df_anomaly[(df_anomaly["TIMESTAMP"]==center_ts) & (df_anomaly[column]==static_value)]
+rm_columns = list(df_anomaly_filters.columns[df_anomaly_filters.nunique() == 1])
+df_anomaly_new_filters = df_anomaly_filters.drop(rm_columns, axis=1)
+--- [23] markdown
+### Desagreggated dataframe from aggregation and Possible aggreation after filters with 2110 rows (which include all timestamps) 
+--- [24] code
+print(df_anomaly_new_filters)
+print("\n\n")
+print(new_filters)
+print("\n\n")
+
+print(len(df_anomaly_new_filters), len(new_filters))
+>>>        Call Type  Event Type Subscriber Type Service Type Partner Description  \
+>>> 940791       SMS  TERMINATED       Roamer In  NOT-ROAMING              P_0111   
+>>> 940792       SMS  TERMINATED       Roamer In  NOT-ROAMING              P_0162   
+>>> 940793       SMS  TERMINATED       Roamer In  NOT-ROAMING              P_0008   
+>>> 940794       SMS  TERMINATED       Roamer In  NOT-ROAMING              P_0028   
+>>> 940795       SMS  TERMINATED       Roamer In  NOT-ROAMING              P_0046   
+>>> ...          ...         ...             ...          ...                 ...   
+>>> 941308     VOICE  ORIGINATED       Roamer In  NOT-ROAMING              P_0071   
+>>> 941309     VOICE  ORIGINATED       Roamer In  NOT-ROAMING              P_0154   
+>>> 941310     VOICE  ORIGINATED       Roamer In  NOT-ROAMING              P_0069   
+>>> 941311     VOICE  ORIGINATED       Roamer In  NOT-ROAMING              P_0184   
+>>> 941312     VOICE  ORIGINATED       Roamer In  NOT-ROAMING              P_0117   
+>>> 
+>>>         #Events  Anomaly  
+>>> 940791        2        1  
+>>> 940792      125        1  
+>>> 940793      535        1  
+>>> 940794       13        1  
+>>> 940795     1730        1  
+>>> ...         ...      ...  
+>>> 941308        3        1  
+>>> 941309      297        1  
+>>> 941310       17        1  
+>>> 941311        2        1  
+>>> 941312        3        1  
+>>> 
+>>> [484 rows x 7 columns]
+>>> 
+>>> 
+>>> 
+>>>      Call Type   Event Type Subscriber Type Service Type Partner Description
+>>> 1          SMS   ORIGINATED        Postpaid  NOT-ROAMING              P_0001
+>>> 167        SMS   ORIGI
+--- [25] code
+import matplotlib.pyplot as plt
+
+def plot_figure(df_anomaly, df_original, center_ts, conditions, title_add):
+    df_anomaly = df_anomaly.reset_index()
+
+    # Encontrando o índice do timestamp central
+    center_index = df_anomaly[df_anomaly["TIMESTAMP"] == center_ts].index[0]
+
+    low = max(center_index - 50, 0)
+    high = min(center_index + 50, len(df_anomaly) - 1)
+
+    plot_df_anomaly = df_anomaly.iloc[low:high]
+    plot_df_original = df_original.iloc[low:high]
+
+    title = ', '.join(map(str, conditions.values()))
+
+    fig, ax = plt.subplots(figsize=(12, 6))
+
+    ax.plot(plot_df_original['TIMESTAMP'], plot_df_original['#Events'], label='Original', marker='o')
+    ax.plot(plot_df_anomaly['TIMESTAMP'], plot_df_anomaly['#Events'], label='Anomalia', marker='x')
+    ax.set_title(f"{title_add}: {title}")
+    ax.set_xlabel('Timestamp')
+    ax.set_ylabel('#Eventos')
+    ax.legend()
+
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
+
+--- [26] code
+df_original_agg = filter_and_aggregate(df, {}, False)
+df_original_cond = filter_and_aggregate(df, condictions, False)
+
+df_anomaly_agg = filter_and_aggregate(df_anomaly, {}, False)
+df_anomaly_cond = filter_and_aggregate(df_anomaly, condictions, False)
+--- [27] code
+center_ts
+>>> Timestamp('2022-10-12 10:00:00')
+--- [28] code
+plot_figure(df_anomaly_agg, df_original_agg, center_ts, {}, "Sem condicoes")
+>>> <Figure size 1200x600 with 1 Axes>
+--- [29] code
+conditions
+>>> {'Traffic Type': 'INT', 'Service Type': 'NOT-ROAMING'}
+--- [30] code
+plot_figure(df_anomaly_agg, df_original_agg, center_ts, {}, "Without conditions")
+>>> <Figure size 1200x600 with 1 Axes>
+--- [31] code
+available_categories = {
+    'Call Type': df['Call Type'].unique().tolist(),
+    'Event Type': df['Event Type'].unique().tolist(),
+    'Subscriber Type': df['Subscriber Type'].unique().tolist(),
+    'Traffic Type': df['Traffic Type'].unique().tolist(),
+    'Service Type': df['Service Type'].unique().tolist(),
+    'Partner Description': df['Partner Description'].unique().tolist(),
+    'STOP': False
+}
+
+
+def revert_key_value_mapping(available_categories):
+    reversed_mapping = {}
+    for key, values in available_categories.items():
+        if isinstance(values, list):  # Ensure the value is iterable
+            for value in values:
+                if value not in reversed_mapping:
+                    reversed_mapping[value] = []
+                reversed_mapping[value].append(key)
+        else:
+            # Handle non-list values (like the 'STOP' flag)
+            value = values
+            if value not in reversed_mapping:
+                reversed_mapping[value] = []
+            reversed_mapping[value].append(key)
+    return reversed_mapping
+--- [32] code
+rt_available_categories = revert_key_value_mapping(available_categories)
+--- [33] code
+dictionary = {column:static_value}
+df_original_cond = filter_and_aggregate(df, dictionary, False)
+df_anomaly_cond = filter_and_aggregate(df_anomaly, dictionary, False)
+plot_figure(df_anomaly_cond, df_original_cond, center_ts, dictionary, "WithConditions: ")
+>>> <Figure size 1200x600 with 1 Axes>
+--- [34] code
+
+--- [35] code
+import itertools
+
+
+def create_dictionaries(static_filter, filters, category_dict):
+    all_combinations = []
+    for r in range(1, len(filters) + 1):
+        for combination in itertools.combinations(filters, r):
+            current_dict = {}
+            
+            current_dict[static_filter[0]] = static_filter[1]
+            for item in combination:
+                category = category_dict.get(item)[0]
+                
+                if category:
+                    # Assigning the filter to the correct category in the dictionary
+                    
+                    current_dict[category] = item
+            if current_dict:  # Make sure the dictionary is not empty
+                all_combinations.append(current_dict)
+    return all_combinations
+
+# Generating dictionaries
+static_filter = [column, static_value]
+resulting_dictionaries = create_dictionaries(static_filter, plot_filters, rt_available_categories)
+
+
+# Print each generated dictionary
+for dictionary in resulting_dictionaries:
+    df_original_cond = filter_and_aggregate(df, dictionary, False)
+    df_anomaly_cond = filter_and_aggregate(df_anomaly, dictionary, False)
+    plot_figure(df_anomaly_cond, df_original_cond, center_ts, dictionary, "WithConditions: ")
+>>> <Figure size 1200x600 with 1 Axes>
+>>> <Figure size 1200x600 with 1 Axes>
+>>> <Figure size 1200x600 with 1 Axes>
+>>> <Figure size 1200x600 with 1 Axes>
+>>> <Figure size 1200x600 with 1 Axes>
+>>> <Figure size 1200x600 with 1 Axes>
+>>> <Figure size 1200x600 with 1 Axes>
+>>> <Figure size 1200x600 with 1 Axes>
+>>> <Figure size 1200x600 with 1 Axes>
+>>> <Figure size 1200x600 with 1 Axes>
+>>> <Figure size 1200x600 with 1 Axes>
+>>> <Figure size 1200x600 with 1 Axes>
+>>> <Figure size 1200x600 with 1 Axes>
+>>> <Figure size 1200x600 with 1 Axes>
+>>> <Figure size 1200x600 with 1 Axes>
+>>> <Figure size 1200x600 with 1 Axes>
+>>> <Figure size 1200x600 with 1 Axes>
+>>> <Figure size 1200x600 with 1 Axes>
+>>> <Figure size 1200x600 with 1 Axes>
+>>> <Figure size 1200x600 with 1 Axes>
+>>> <Figure size 1200x600 with 1 Axes>
+>>> <Figure size 1200x600 with 1 Axes>
+>>> <Figure size 1200x600 with 1 Axes>
+>>> <Figure size 1200x600 with 1 Axes>
+>>> <Figure size 1200x600 with 1 Axes>
+>>> <Figure size 1200x600 with 1 Axes>
+>>> <Figure size 1200x600 with 1 Axes>
+>>> <Figure size 1200x600 with 1 Axes>
+>>> <Figure size 1200x600 with 1 Axes>
+>>> <Figure size 1200x600 with 1 Axes>
+>>> <Figure size 1200x600 with 1 Axes>
+--- [36] code
+
+--- [37] code
+
