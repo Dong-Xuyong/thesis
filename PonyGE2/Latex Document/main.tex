@@ -1,29 +1,51 @@
-\documentclass[12pt,a4paper]{report}
+\documentclass[12pt,a4paper,twoside,openany]{report}
 
-\usepackage[english]{babel}
-\usepackage{fontspec} 
+\usepackage[portuguese,main=english]{babel}
+\usepackage{fontspec}
 \usepackage{csquotes} % Recommended for biblatex
 \usepackage{hyperref}
 
 \usepackage[noend]{algpseudocode}
-%-- Font News Got T
-% \setmainfont{NewsGotT.ttf}
-% \setmainfont[
-% Ligatures=TeX,
-% AutoFakeSlant=0.20,
-% BoldFont=NewsGotTBold.ttf
-% ]{NewsGotT.ttf}
-% \newfontfamily\NewsGotTLight{NewsGotTLight.ttf}
+
+% NewsGotT is the University of Minho text face (RT-80/2026, item 1).
+% The files in assets/fonts/ include real italic and bold italic.
+\setmainfont{NewsGotT}[
+  Path=assets/fonts/,
+  Extension=.ttf,
+  UprightFont=ngottr,
+  BoldFont=ngottb,
+  ItalicFont=ngottri,
+  BoldItalicFont=ngottbi,
+  Ligatures=TeX
+]
+\newfontfamily\NewsGotTLight{NewsGotTLig}[
+  Path=assets/fonts/,
+  Extension=.ttf,
+  UprightFont=ngottl,
+  ItalicFont=ngottli,
+  Ligatures=TeX
+]
+
+% NewsGotT has no ė, ń or Ż. Names in the bibliography use them.
+% Latin Modern supplies only those glyphs; the entries themselves are unchanged.
+\usepackage{newunicodechar}
+\newfontfamily\GlyphFallback{lmroman10-regular.otf}[
+  BoldFont=lmroman10-bold.otf,
+  ItalicFont=lmroman10-italic.otf,
+  BoldItalicFont=lmroman10-bolditalic.otf,
+  Ligatures=TeX
+]
+\newunicodechar{ė}{{\GlyphFallback ė}}
+\newunicodechar{ń}{{\GlyphFallback ń}}
+\newunicodechar{Ż}{{\GlyphFallback Ż}}
 
 \usepackage{amsmath,amssymb}
-\usepackage[margin=2.5cm]{geometry}
+\usepackage[a4paper,margin=2.5cm]{geometry}
 \usepackage{booktabs}
 \usepackage{graphicx}
 \usepackage{float}
-\usepackage{fontspec}
 \usepackage{pdfpages}
 \usepackage{titlesec}
-\usepackage{emptypage}
 \usepackage{multirow}
 \usepackage{tabularx}
 \usepackage{tabulary}
@@ -31,20 +53,32 @@
 \usepackage[bottom]{footmisc}
 \usepackage[nohyperlinks]{acronym}
 \usepackage{listings}
-\usepackage{grffile}
 
 \usepackage{pdflscape} % For landscape pages
 \usepackage{afterpage} % For page control
 
-% \usepackage{algorithmic}
 \usepackage{mathtools}
+\usepackage{chngcntr}
+
+% RT-80/2026, item 16: 1.5 line spacing in the body.
+% The reference list sets this back to 1 via \bibfont.
+\linespread{1.5}
+% Long file names in \texttt cannot hyphenate. A little stretch avoids
+% overfull lines without changing the wording.
+\setlength{\emergencystretch}{2em}
+
+% RT-80/2026, item 16: footnotes are 8 pt. Leading is 1.5 times that size.
+\renewcommand{\footnotelayout}{\fontsize{8pt}{12pt}\selectfont}
+
+% RT-80/2026, item 17: figures and tables are numbered 1 to N, not by chapter.
+\counterwithout{figure}{chapter}
+\counterwithout{table}{chapter}
 
 \hypersetup{
     colorlinks=false,
     linktoc=all,
     hidelinks
 }
-\usepackage{pdfpages} % Required for \includepdf
 
 % Load biblatex with biber and authoryear style
 \usepackage[
@@ -68,6 +102,9 @@
 % Set the delimiter between name and year
 \renewcommand*{\nameyeardelim}{\addcomma\space}
 
+% RT-80/2026, item 16: the reference list may be single-spaced.
+\renewcommand{\bibfont}{\normalfont\normalsize\linespread{1}\selectfont}
+
 \newcommand{\term}[1]{\ensuremath{\mathsf{#1}}}
 \newcommand{\nterm}[1]{\ensuremath{\langle\mathit{#1}\rangle}}
 \newcommand{\produces}{\ensuremath{::=}}
@@ -76,26 +113,79 @@
 % Remove any formatting from \parencite
 \DeclareFieldFormat[parencite]{citehyperref}{#1}
 
+% Included cover sheets use fitpaper, which changes the page size.
+% Body pages stay A4.
+\newcommand{\RestoreAFour}{%
+  \setlength{\paperwidth}{210mm}%
+  \setlength{\paperheight}{297mm}%
+  \setlength{\pdfpagewidth}{210mm}%
+  \setlength{\pdfpageheight}{297mm}%
+}
+
+% Lists of figures and tables use the same section heading as the rest of
+% the front matter. \listoffigures would open with \chapter*, and a second
+% page break in front of that ships a blank page.
+\makeatletter
+\newcommand{\uminholist}[2]{%
+  \clearpage
+  \phantomsection
+  \addcontentsline{toc}{section}{#1}%
+  \section*{#1}%
+  \@starttoc{#2}%
+}
+\makeatother
+
+% Missing results images keep their figure environment and caption.
+\newcommand{\includefig}[2][]{%
+  \IfFileExists{#2}{%
+    \includegraphics[#1]{#2}%
+  }{%
+    \PackageWarning{thesis}{Missing figure file #2}%
+    \setlength{\fboxsep}{8pt}%
+    \fbox{%
+      \begin{minipage}[c][0.30\textheight][c]{0.90\linewidth}
+        \centering
+        \textbf{TODO(Dong): missing figure file.}\\[0.6em]
+        \texttt{\detokenize{#2}}\\[0.6em]
+        The figure environment and its caption are unchanged.
+        Put the image at this path and rebuild.
+      \end{minipage}%
+    }%
+  }%
+}
+
 \begin{document}
+\raggedbottom
+\pagestyle{plain}
 
-% Front matter
+% Outer cover. Left as a PDF. Not part of the numbered sequence.
+\hypersetup{pageanchor=false}
 \includepdf[fitpaper,pages=-]{assets/pdf/capa2.pdf}
-\includepdf[pages={1},fitpaper]{assets/pdf/contracapa_Dissertacao.pdf}
-\setcounter{page}{1}
-\pagenumbering{arabic}
-\includepdf[fitpaper,pages=-]{assets/pdf/capa1.pdf}
+\RestoreAFour
 
-% Include sections
+% Title page (folha de rosto): counted as roman i, number not printed.
+% pdfpages already applies an empty page style to included sheets.
+\hypersetup{pageanchor=true}
+\pagenumbering{roman}
+\includepdf[fitpaper,pages=-]{assets/pdf/capa1.pdf}
+\RestoreAFour
+
+% 3-literature-review.tex is included at the end of 2-theory-background.tex.
 \input{0-atachements}
-\input{1-introduction}
+
+% Arabic numbering starts at Chapter 1 and runs through the references.
+% The page break is here, not inside \chapter, so no blank page is shipped.
+\clearpage
+\pagenumbering{arabic}
+\input{1-Introduction}
 \input{2-theory-background}
 \input{4-materials-methodology}
 \input{5-results-discussion}
 \input{6-conclusions}
 
-% In empirical research, time series data are often modeled to capture dynamic relationships \parencite{Bean2018, Daugherty2018}. 
-% Other studies emphasize alternative approaches \parencite{ONeill2003}.
-
 \printbibliography
+
+\hypersetup{pageanchor=false}
+\includepdf[fitpaper,pages=-]{assets/pdf/contracapa_Dissertacao.pdf}
 
 \end{document}

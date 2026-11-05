@@ -1,8 +1,5 @@
-% Builds main.tex with pdflatex while Smart App Control blocks lualatex, xelatex's PDF driver and biber.
-% Usage (from this folder): pdflatex -jobname=main build-pdflatex.tex   (run 3 times; reuses the existing main.bbl)
-% fontspec only works under xelatex/lualatex, so it is marked as already loaded and Latin Modern
-% (the fontspec default) is loaded through T1 fonts instead.
-\expandafter\def\csname ver@fontspec.sty\endcsname{2099/01/01}
-\AddToHook{package/babel/after}{\RequirePackage[T1]{fontenc}\RequirePackage{lmodern}}
-\DeclareUnicodeCharacter{2192}{\ensuremath{\rightarrow}}
-\input{main}
+% Retired. pdfLaTeX cannot load NewsGotT through fontspec, and the old
+% recipe reused a stale main.bbl. Build with XeLaTeX and a fresh Biber run:
+%   ./build.sh
+\GenericError{}{Use ./build.sh (XeLaTeX + Biber). build-pdflatex.tex is retired.}{}{}
+\stop
