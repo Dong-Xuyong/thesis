@@ -1,0 +1,105 @@
+% Cover spread, gray verso, and title page.
+% Layout follows the DI MSc template (covers/Covers.tex) and RT-80/2026 Annex 2.
+% \submissiondate is defined in main.tex and is printed on the cover, the spine, and the title page.
+\definecolor{PANTONECoolGray7C}{HTML}{97999B}
+
+% Full outside cover: empty back panel, spine, front cover. 210 + 20 + 210 = 440 mm.
+\newcommand{\CoverSpread}{%
+  \setlength{\pdfpagewidth}{440mm}%
+  \setlength{\pdfpageheight}{297mm}%
+  \setlength{\paperwidth}{440mm}%
+  \setlength{\paperheight}{297mm}%
+  \thispagestyle{empty}%
+  \begingroup
+  \renewcommand{\baselinestretch}{1}\selectfont
+  \null
+  \begin{tikzpicture}[remember picture, overlay, x=1mm, y=1mm]
+    \begin{scope}[shift={(current page.north west)}, yscale=-1]
+      % Spine symbols, vertical, without the school name (Annex 2).
+      \node[anchor=north, inner sep=0pt] at (220,16)
+        {\includegraphics[width=9mm]{assets/logos/UM.jpg}};
+      \node[anchor=north, inner sep=0pt] at (220,26)
+        {\includegraphics[width=9mm]{assets/logos/EE.jpg}};
+      \node[anchor=center, rotate=90, text=PANTONECoolGray7C, inner sep=0pt] at (220,150) {%
+        \fontsize{12pt}{14.4pt}\selectfont
+        \shortstack{%
+          \textbf{Hierarchical structure optimization}\\
+          \textbf{for anomaly detection in grouped time series data}\\
+          Dong Xuyong}};
+      \node[anchor=center, rotate=90, text=PANTONECoolGray7C, inner sep=0pt] at (220,278) {%
+        \fontsize{10pt}{12pt}\selectfont UMinho | \submissiondate};
+      % Front cover. Text block starts 79 mm into the front panel, as in the template.
+      \node[anchor=north west, inner sep=0pt] at (309,18)
+        {\includegraphics[width=26mm]{assets/logos/UM.jpg}%
+         \includegraphics[width=26mm]{assets/logos/EE.jpg}};
+      \node[anchor=north west, text=PANTONECoolGray7C, inner sep=0pt] at (309,52) {%
+        \fontsize{14.4pt}{16.8pt}\selectfont
+        \shortstack[l]{%
+          \textbf{University of Minho}\\
+          {\NewsGotTLight School of Engineering}}};
+      \node[anchor=north west, text=PANTONECoolGray7C, inner sep=0pt] at (309,108) {%
+        \fontsize{17.28pt}{20.4pt}\selectfont
+        \shortstack[l]{%
+          Dong Xuyong\\
+          \strut\\
+          \textbf{Hierarchical structure optimization}\\
+          \textbf{for anomaly detection in grouped}\\
+          \textbf{time series data}}};
+      \node[anchor=north west, text=PANTONECoolGray7C, inner sep=0pt] at (309,282) {%
+        \fontsize{10pt}{12pt}\selectfont \submissiondate};
+    \end{scope}
+  \end{tikzpicture}%
+  \endgroup
+  \clearpage
+  \RestoreAFour
+}
+
+% Verso of the cover: Pantone Cool Gray 7, no text (Annex 2 and the DI template).
+\newcommand{\CoverVerso}{%
+  \thispagestyle{empty}%
+  \pagecolor{PANTONECoolGray7C}%
+  \null
+  \clearpage
+  \nopagecolor
+}
+
+% Title page (folha de rosto). Counted, number not printed.
+\newcommand{\TitlePage}{%
+  \thispagestyle{empty}%
+  \begingroup
+  \renewcommand{\baselinestretch}{1}\selectfont
+  \null
+  \begin{tikzpicture}[remember picture, overlay, x=1mm, y=1mm]
+    \begin{scope}[shift={(current page.north west)}, yscale=-1]
+      \node[anchor=north west, inner sep=0pt] at (79,18)
+        {\includegraphics[width=26mm]{assets/logos/UM-gray.jpg}\hspace{0.5mm}%
+         \includegraphics[width=26mm]{assets/logos/EE-gray.jpg}};
+      \node[anchor=north west, text=PANTONECoolGray7C, inner sep=0pt] at (79,52) {%
+        \fontsize{14.4pt}{16.8pt}\selectfont
+        \shortstack[l]{%
+          \textbf{University of Minho}\\
+          {\NewsGotTLight School of Engineering}}};
+      \node[anchor=north west, text=PANTONECoolGray7C, inner sep=0pt] at (79,108) {%
+        \fontsize{17.28pt}{20.4pt}\selectfont
+        \shortstack[l]{%
+          Dong Xuyong\\
+          \strut\\
+          \textbf{Hierarchical structure optimization}\\
+          \textbf{for anomaly detection in grouped}\\
+          \textbf{time series data}}};
+      \node[anchor=north west, text=PANTONECoolGray7C, inner sep=0pt] at (79,188) {%
+        \fontsize{14.4pt}{16.8pt}\selectfont
+        \shortstack[l]{%
+          Master's dissertation in Information Systems\\
+          Engineering and Management\\
+          \strut\\
+          \textbf{Work carried out under the supervision of}\\
+          \textbf{Professor Doctor Paulo Alexandre Ribeiro Cortez}\\
+          \textbf{Professor Doctor Emanuel Demétrio Mendes Gouveia}}};
+      \node[anchor=north west, text=PANTONECoolGray7C, inner sep=0pt] at (79,282) {%
+        \fontsize{10pt}{12pt}\selectfont \submissiondate};
+    \end{scope}
+  \end{tikzpicture}%
+  \endgroup
+  \clearpage
+}

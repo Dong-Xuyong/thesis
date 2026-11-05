@@ -59,6 +59,7 @@
 
 \usepackage{mathtools}
 \usepackage{chngcntr}
+\usepackage{tikz}
 
 % RT-80/2026, item 16: 1.5 line spacing in the body.
 % The reference list sets this back to 1 via \bibfont.
@@ -154,21 +155,24 @@
   }%
 }
 
+% Submission month and year. Printed on the cover, the spine, and the title page.
+\newcommand{\submissiondate}{November 2026}
+\input{covers}
+
 \begin{document}
 \raggedbottom
 \pagestyle{plain}
 
-% Outer cover. Left as a PDF. Not part of the numbered sequence.
+% Cover spread and gray verso are outside the numbered sequence.
 \hypersetup{pageanchor=false}
-\includepdf[fitpaper,pages=-]{assets/pdf/capa2.pdf}
-\RestoreAFour
+\CoverSpread
+\CoverVerso
 
 % Title page (folha de rosto): counted as roman i, number not printed.
-% pdfpages already applies an empty page style to included sheets.
 \hypersetup{pageanchor=true}
 \pagenumbering{roman}
-\includepdf[fitpaper,pages=-]{assets/pdf/capa1.pdf}
-\RestoreAFour
+\TitlePage
+\pagestyle{plain}
 
 % 3-literature-review.tex is included at the end of 2-theory-background.tex.
 \input{0-atachements}
